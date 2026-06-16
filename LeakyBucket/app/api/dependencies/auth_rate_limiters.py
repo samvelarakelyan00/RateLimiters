@@ -6,11 +6,11 @@ from core.security.rate_limit_profiles import (
     LOGIN_IP_LIMITER,
     LOGIN_EMAIL_LIMITER,
     SIGNUP_IP_LIMITER,
-    SIGNUP_EMAIL_LIMITER,
+    SIGNUP_EMAIL_LIMITER
 )
 
 from core.security.rate_limit_service import (
-    RateLimitService,
+    RateLimitService
 )
 
 

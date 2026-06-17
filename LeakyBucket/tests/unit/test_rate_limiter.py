@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 
 # Own Modules
-from core.security.rate_limiter import LeakyBucketLimiter
+from core.security.rate_limiter.rate_limiter import LeakyBucketLimiter
 
 
 # --------------------------------------------------------------------------------------
@@ -135,8 +135,9 @@ async def test_partial_leak_does_not_fully_reset_bucket(mock_time) -> None:
     mock_time.return_value = 1000.5
     assert await limiter.acquire("user") is True
 
-    mock_time.value = 1001.1
+    mock_time.return_value = 1001.1
     assert await limiter.acquire("user") is False
+
 
 
 @pytest.mark.asyncio

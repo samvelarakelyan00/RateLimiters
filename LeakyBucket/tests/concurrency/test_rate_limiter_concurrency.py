@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 # Own Modules
-from core.security.rate_limiter import LeakyBucketLimiter
+from core.security.rate_limiter.rate_limiter import LeakyBucketLimiter
 
 
 # --------------------------------------------------------------------------------------

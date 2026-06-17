@@ -3,7 +3,7 @@ import pytest
 from fastapi import HTTPException
 
 # Own Modules
-from core.security.rate_limit_service import RateLimitService
+from core.security.rate_limiter.rate_limit_service import RateLimitService
 
 
 # --------------------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 import pytest
 
 
-from core.security.rate_limit_profiles import (
+from core.security.rate_limiter.rate_limit_profiles import (
     LOGIN_IP_LIMITER,
     LOGIN_EMAIL_LIMITER,
     SIGNUP_IP_LIMITER,

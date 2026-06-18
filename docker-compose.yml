@@ -1,0 +1,21 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rate-limit-api
+    ports:
+      - "8000:8000"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      - redis
+    command: uv run uvicorn main:app --port 8000 --host 0.0.0.0
+
+  redis:
+    image: redis:8-alpine
+    container_name: rate-limit-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped

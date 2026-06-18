@@ -1,45 +1,52 @@
 # Standard libs
 import time
-from typing import Dict, Tuple
+
+# Own Modules
+from core.security.rate_limiter.redis_client import (
+    redis_client
+)
 
 
 class LeakyBucketLimiter:
-    def __init__(self, capacity: int, leak_rate: float, cleanup_interval: int = 60) -> None:
+    def __init__(self, capacity: int, leak_rate: float) -> None:
         self.capacity = capacity
         self.leak_rate = leak_rate
-        self._cleanup_interval = cleanup_interval
-
-        self._buckets: Dict[str, Tuple[float, float]] = {}
-        self._last_cleanup = time.monotonic()
 
     async def acquire(self, key: str) -> bool:
-        """
-        Evaluates the rate limit for a specific key.
-        Returns True if the request is rate-limited (blocked), False if allowed.
-        """
         now = time.monotonic()
+        bucket = await redis_client.hgetall(key)
 
-        if now - self._last_cleanup > self._cleanup_interval:
-            self._evict_expired_buckets(now)
-
-        water_level, last_update = self._buckets.get(key, (0.0, now))
+        if not bucket:
+            water_level = 0.0
+            last_update = now
+        else:
+            water_level = float(bucket["water_level"])
+            last_update = float(bucket["last_update"])
 
         leaked = (now - last_update) * self.leak_rate
         water_level = max(0.0, water_level - leaked)
 
         if water_level + 1 <= self.capacity:
-            self._buckets[key] = (water_level + 1, now)
-            return False  # Request Allowed
+            await redis_client.hset(
+                key,
+                mapping={
+                    "water_level": water_level + 1,
+                    "last_update": now
+                }
+            )
 
-        self._buckets[key] = (water_level, now)
-        return True  # Request Blocked
+            await redis_client.expire(key, 3600)
 
-    def _evict_expired_buckets(self, now: float) -> None:
-        """Removes dry buckets completely from RAM memory to prevent OOM errors."""
-        expired_keys = [
-            key for key, (water, last_upd) in self._buckets.items()
-            if water - ((now - last_upd) * self.leak_rate) <= 0
-        ]
-        for key in expired_keys:
-            self._buckets.pop(key, None)
-        self._last_cleanup = now
+            return False
+
+        await redis_client.hset(
+            key,
+            mapping={
+                "water_level": water_level,
+                "last_update": now
+            }
+        )
+
+        await redis_client.expire(key, 3600)
+
+        return True

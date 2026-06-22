@@ -74,15 +74,15 @@ def test_build_email_key_normalizes_email() -> None:
 # --------------------------------------------------------------------------------------
 def test_raise_ip_limit_raises_http_exception() -> None:
     with pytest.raises(HTTPException) as exc:
-        RateLimitService.raise_ip_limit()
+        RateLimitService.raise_ip_limit_exceeded()
 
     assert exc.value.status_code == 429
-    assert exc.value.detail == "Too many requests from this IP."
+    assert exc.value.detail == "Your IP limit exceeded; please try again later!"
 
 
 def test_raise_email_limit_raises_http_exception() -> None:
     with pytest.raises(HTTPException) as exc:
-        RateLimitService.raise_email_limit()
+        RateLimitService.raise_email_limit_exceeded()
 
     assert exc.value.status_code == 429
-    assert exc.value.detail == "Too many requests for this account."
+    assert exc.value.detail == "Your email limit exceeded; please try again later!"

@@ -1,12 +1,40 @@
-import pytest_asyncio
+# Standard libs
+from typing import Generator, AsyncGenerator
 
-from core.security.rate_limiter.redis_client import redis_client
+# Non-Standard libs
+import pytest
+import redis.asyncio as aioredis
+from testcontainers.redis import RedisContainer
 
 
-@pytest_asyncio.fixture(autouse=True)
-async def clean_redis():
-    await redis_client.flushdb()
+@pytest.fixture(scope="session")
+def redis_container() -> Generator[RedisContainer, None, None]:
+    """
+    Spins up an isolated Redis Docker container automatically before any tests run.
+    Cleans up and destroys the container after the entire test session finishes.
+    """
+    container = RedisContainer("redis:7-alpine")
+    with container:
+        yield container
 
-    yield
 
-    await redis_client.flushdb()
+@pytest.fixture(scope="function")
+async def test_redis_client(redis_container) -> AsyncGenerator[aioredis.Redis, None]:
+    """
+    Creates a real async connection client to the automated Docker container.
+    Flushes the database before and after each test to ensure complete isolation.
+    """
+    host = redis_container.get_container_host_ip()
+    port = redis_container.get_exposed_port(redis_container.port)
+
+    # Initialize the real connection client
+    client = aioredis.Redis(host=host, port=int(port), decode_responses=True)
+
+    # Pre-test cleanup
+    await client.flushdb()
+
+    yield client
+
+    # Post-test cleanup
+    await client.flushdb()
+    await client.aclose()

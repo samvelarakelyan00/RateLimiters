@@ -8,6 +8,7 @@ dependencies = [
     "pytess>=1.0.0",
     "redis[hiredis]>=8.0.0",
     "requests>=2.34.2",
+    "testcontainers[redis]>=4.14.2",
 ]
 
 [dependency-groups]

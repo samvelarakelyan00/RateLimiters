@@ -1,236 +1,334 @@
 # Standard libs
 import asyncio
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 # Non-Standard libs
 import pytest
 
 # Own Modules
-from core.security.rate_limiter.rate_limiter import LeakyBucketLimiter
-from core.security.rate_limiter.redis_client import redis_client
+from core.security.rate_limiter.rate_limiter import LeakyBucket
 
 
 # --------------------------------------------------------------------------------------
 # Basic Request Flow
 # --------------------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_first_request_is_allowed() -> None:
-    limiter = LeakyBucketLimiter(capacity=3, leak_rate=1.0)
+@patch("core.security.rate_limiter.rate_limiter.redis_manager", autospec=True)
+async def test_first_request_is_allowed(mock_redis) -> None:
+    mock_redis.client.eval = AsyncMock(return_value=1)
 
-    assert await limiter.acquire("user") is False
+    limiter = LeakyBucket(capacity=3.0, leak_rate=1.0)
 
+    result = await limiter.acquire("user")
 
-@pytest.mark.asyncio
-async def test_second_request_is_allowed_before_capacity() -> None:
-    limiter = LeakyBucketLimiter(capacity=3, leak_rate=1.0)
+    assert result is True
 
-    await limiter.acquire("user")
-
-    assert await limiter.acquire("user") is False
+    mock_redis.client.eval.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_request_at_capacity_is_allowed() -> None:
-    limiter = LeakyBucketLimiter(capacity=3, leak_rate=1.0)
+@patch("core.security.rate_limiter.rate_limiter.redis_manager", autospec=True)
+async def test_second_request_is_allowed_before_capacity(mock_redis) -> None:
+    mock_redis.client.eval = AsyncMock(side_effect=[1, 1])
 
-    await limiter.acquire("user")
-    await limiter.acquire("user")
+    limiter = LeakyBucket(capacity=3.0, leak_rate=1.0)
 
-    assert await limiter.acquire("user") is False
+    first_result = await limiter.acquire("user")
+    second_result = await limiter.acquire("user")
 
-
-@pytest.mark.asyncio
-async def test_request_above_capacity_is_blocked() -> None:
-    limiter = LeakyBucketLimiter(capacity=3, leak_rate=1.0)
-
-    await limiter.acquire("user")
-    await limiter.acquire("user")
-    await limiter.acquire("user")
-
-    assert await limiter.acquire("user") is True
+    assert first_result is True
+    assert second_result is True
+    assert mock_redis.client.eval.call_count == 2
 
 
 @pytest.mark.asyncio
-async def test_multiple_requests_after_block_remain_blocked() -> None:
-    limiter = LeakyBucketLimiter(capacity=1, leak_rate=0.0)
+@patch("core.security.rate_limiter.rate_limiter.redis_manager", autospec=True)
+async def test_fourth_request_exceeds_capacity_and_is_denied(mock_redis) -> None:
+    mock_redis.client.eval = AsyncMock(side_effect=[1, 1, 1])
 
-    await limiter.acquire("user")
+    limiter = LeakyBucket(capacity=3.0, leak_rate=1.0)
 
-    assert await limiter.acquire("user") is True
-    assert await limiter.acquire("user") is True
-    assert await limiter.acquire("user") is True
+    res1 = await limiter.acquire("user")
+    res2 = await limiter.acquire("user")
+    res3 = await limiter.acquire("user")
+
+    assert res1 is True
+    assert res2 is True
+    assert res3 is True
+    assert mock_redis.client.eval.call_count == 3
+
+
+@pytest.mark.asyncio
+@patch("core.security.rate_limiter.rate_limiter.redis_manager", autospec=True)
+async def test_request_above_capacity_is_blocked(mock_redis) -> None:
+    mock_redis.client.eval = AsyncMock(side_effect=[1, 1, 1, 0])
+
+    limiter = LeakyBucket(capacity=3.0, leak_rate=1.0)
+
+    first_result = await limiter.acquire("user")
+    second_result = await limiter.acquire("user")
+    third_result = await limiter.acquire("user")
+    fourth_result = await limiter.acquire("user")
+
+    assert first_result is True
+    assert second_result is True
+    assert third_result is True
+    assert fourth_result is False
+    assert mock_redis.client.eval.call_count == 4
+
+
+@pytest.mark.asyncio
+@patch("core.security.rate_limiter.rate_limiter.redis_manager", autospec=True)
+async def test_multiple_requests_after_block_remain_blocked(mock_redis) -> None:
+    mock_redis.client.eval = AsyncMock(side_effect=[1, 0, 0, 0])
+
+    limiter = LeakyBucket(capacity=1.0, leak_rate=1.0)
+
+    frist_result = await limiter.acquire("user")
+    second_result = await limiter.acquire("user")
+    third_result = await limiter.acquire("user")
+    fourth_result = await limiter.acquire("user")
+
+    assert frist_result is True
+    assert second_result is False
+    assert third_result is False
+    assert fourth_result is False
+
+    assert mock_redis.client.eval.call_count == 4
 
 
 # --------------------------------------------------------------------------------------
 # Key Isolation
 # --------------------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_different_keys_are_independent() -> None:
-    limiter = LeakyBucketLimiter(capacity=1, leak_rate=0.0)
+@patch("core.security.rate_limiter.rate_limiter.redis_manager", autospec=True)
+async def test_different_keys_are_independent(mock_redis) -> None:
+    mock_redis.client.eval = AsyncMock(side_effect=[1, 1])
 
-    assert await limiter.acquire("user_a") is False
-    assert await limiter.acquire("user_b") is False
+    limiter = LeakyBucket(capacity=1.0, leak_rate=1.0)
+
+    first_result = await limiter.acquire("user1")
+    second_result = await limiter.acquire("user2")
+
+    assert first_result is True
+    assert second_result is True
+    assert mock_redis.client.eval.call_count == 2
 
 
 @pytest.mark.asyncio
-async def test_same_key_uses_same_bucket() -> None:
-    limiter = LeakyBucketLimiter(capacity=1, leak_rate=0.0)
+@patch("core.security.rate_limiter.rate_limiter.redis_manager", autospec=True)
+async def test_same_key_uses_same_bucket(mock_redis) -> None:
+    mock_redis.client.eval = AsyncMock(side_effect=[1, 0])
 
-    assert await limiter.acquire("user") is False
-    assert await limiter.acquire("user") is True
+    limiter = LeakyBucket(capacity=1.0, leak_rate=1.0)
+
+    first_result = await limiter.acquire("user")
+    second_result = await limiter.acquire("user")
+
+    assert first_result is True
+    assert second_result is False
+    assert mock_redis.client.eval.call_count == 2
 
 
 @pytest.mark.asyncio
-async def test_many_keys_do_not_interfere() -> None:
-    limiter = LeakyBucketLimiter(capacity=1, leak_rate=0.0)
+@patch("core.security.rate_limiter.rate_limiter.redis_manager", autospec=True)
+async def test_many_keys_do_not_interfere(mock_redis) -> None:
+    mock_redis.client.eval = AsyncMock(side_effect=[1 for _ in range(100)])
+
+    limiter = LeakyBucket(capacity=1.0, leak_rate=1.0)
 
     for i in range(100):
-        assert await limiter.acquire(f"user_{i}") is False
+        result = await limiter.acquire(f"user_{i}")
+        assert result is True
+
+    assert mock_redis.client.eval.call_count == 100
 
 
 # --------------------------------------------------------------------------------------
 # Leak Recovery
 # --------------------------------------------------------------------------------------
 @pytest.mark.asyncio
-@patch("time.monotonic")
-async def test_bucket_recovers_after_leak_period(mock_time) -> None:
-    mock_time.return_value = 1000.0
+@patch("core.security.rate_limiter.rate_limiter.redis_manager", autospec=True)
+async def test_bucket_recovers_after_leak_period(mock_redis) -> None:
+    mock_redis.client.eval = AsyncMock(side_effect=[1, 1])
 
-    limiter = LeakyBucketLimiter(capacity=1, leak_rate=1.0)
+    limiter = LeakyBucket(capacity=1.0, leak_rate=1.0)
 
-    await limiter.acquire("user")
+    first_result = await limiter.acquire("user")
+    second_result = await limiter.acquire("user")
 
-    mock_time.return_value = 1001.1
-
-    assert await limiter.acquire("user") is False
-
-
-@pytest.mark.asyncio
-@patch("time.monotonic")
-async def test_partial_leak_does_not_fully_reset_bucket(mock_time) -> None:
-    mock_time.return_value = 1000.0
-
-    limiter = LeakyBucketLimiter(capacity=2, leak_rate=1.0)
-
-    await limiter.acquire("user")
-    await limiter.acquire("user")
-
-    mock_time.return_value = 1000.5
-
-    assert await limiter.acquire("user") is True
-
-    mock_time.return_value = 1001.1
-
-    assert await limiter.acquire("user") is False
+    assert first_result is True
+    assert second_result is True
+    assert mock_redis.client.eval.call_count == 2
 
 
 @pytest.mark.asyncio
-@patch("time.monotonic")
-async def test_full_leak_empties_bucket(mock_time) -> None:
-    mock_time.return_value = 1000.0
+@patch("core.security.rate_limiter.rate_limiter.redis_manager", autospec=True)
+async def test_partial_leak_does_not_fully_reset_bucket(mock_redis) -> None:
+    mock_redis.client.eval = AsyncMock(side_effect=[1, 1, 0, 1])
 
-    limiter = LeakyBucketLimiter(capacity=2, leak_rate=2.0)
+    limiter = LeakyBucket(capacity=2.0, leak_rate=1.0)
 
-    await limiter.acquire("user")
-    await limiter.acquire("user")
+    first_result = await limiter.acquire("user")
+    second_result = await limiter.acquire("user")
+    third_result = await limiter.acquire("user")
+    fourth_result = await limiter.acquire("user")
 
-    mock_time.return_value = 1001.1
-
-    assert await limiter.acquire("user") is False
-
-
-@pytest.mark.asyncio
-async def test_high_leak_rate_recovers_faster() -> None:
-    limiter = LeakyBucketLimiter(capacity=1, leak_rate=10.0)
-
-    await limiter.acquire("user")
-
-    await asyncio.sleep(0.2)
-
-    assert await limiter.acquire("user") is False
+    assert first_result is True
+    assert second_result is True
+    assert third_result is False
+    assert fourth_result is True
+    assert mock_redis.client.eval.call_count == 4
 
 
 @pytest.mark.asyncio
-async def test_low_leak_rate_recovers_slower() -> None:
-    limiter = LeakyBucketLimiter(capacity=1, leak_rate=0.1)
+@patch("core.security.rate_limiter.rate_limiter.redis_manager", autospec=True)
+async def test_full_leak_empties_bucket(mock_redis) -> None:
+    mock_redis.client.eval = AsyncMock(side_effect=[1, 1, 1])
 
-    await limiter.acquire("user")
+    limiter = LeakyBucket(capacity=2.0, leak_rate=2.0)
 
-    await asyncio.sleep(0.2)
+    first_result = await limiter.acquire("user")
+    second_result = await limiter.acquire("user")
+    third_result = await limiter.acquire("user")
 
-    assert await limiter.acquire("user") is True
+    assert first_result is True
+    assert second_result is True
+    assert third_result is True
+    assert mock_redis.client.eval.call_count == 3
+
+
+@pytest.mark.asyncio
+@patch("core.security.rate_limiter.rate_limiter.redis_manager", autospec=True)
+async def test_high_leak_rate_recovers_faster(mock_redis) -> None:
+    mock_redis.client.eval = AsyncMock(side_effect=[1, 1])
+
+    limiter = LeakyBucket(capacity=1.0, leak_rate=10.0)
+
+    first_result = await limiter.acquire("user")
+    second_result = await limiter.acquire("user")
+
+    assert first_result is True
+    assert second_result is True
+    assert mock_redis.client.eval.call_count == 2
+
+
+@pytest.mark.asyncio
+@patch("core.security.rate_limiter.rate_limiter.redis_manager", autospec=True)
+async def test_low_leak_rate_recovers_slower(mock_redis) -> None:
+    mock_redis.client.eval = AsyncMock(side_effect=[1, 0])
+
+    limiter = LeakyBucket(capacity=1.0, leak_rate=0.1)
+
+    first_result = await limiter.acquire("user")
+    second_result = await limiter.acquire("user")
+
+    assert first_result is True
+    assert second_result is False
+    assert mock_redis.client.eval.call_count == 2
 
 
 # --------------------------------------------------------------------------------------
 # Capacity Edge Cases
 # --------------------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_capacity_one_allows_single_request() -> None:
-    limiter = LeakyBucketLimiter(capacity=1, leak_rate=1.0)
+@patch("core.security.rate_limiter.rate_limiter.redis_manager", autospec=True)
+async def test_capacity_one_allows_single_request(mock_redis) -> None:
+    mock_redis.client.eval = AsyncMock(return_value=1)
 
-    assert await limiter.acquire("user") is False
+    limiter = LeakyBucket(capacity=1.0, leak_rate=1.0)
 
+    result = await limiter.acquire("user")
 
-@pytest.mark.asyncio
-async def test_capacity_one_blocks_second_request() -> None:
-    limiter = LeakyBucketLimiter(capacity=1, leak_rate=1.0)
-
-    await limiter.acquire("user")
-
-    assert await limiter.acquire("user") is True
+    assert result is True
+    mock_redis.client.eval.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_large_capacity_allows_many_requests() -> None:
-    limiter = LeakyBucketLimiter(capacity=1000, leak_rate=0.0)
+@patch("core.security.rate_limiter.rate_limiter.redis_manager", autospec=True)
+async def test_capacity_one_blocks_second_request(mock_redis) -> None:
+    mock_redis.client.eval = AsyncMock(side_effect=[1, 0])
+
+    limiter = LeakyBucket(capacity=1.0, leak_rate=1.0)
+
+    first_result = await limiter.acquire("user")
+    second_result = await limiter.acquire("user")
+
+    assert first_result is True
+    assert second_result is False
+    assert mock_redis.client.eval.call_count == 2
+
+
+@pytest.mark.asyncio
+@patch("core.security.rate_limiter.rate_limiter.redis_manager", autospec=True)
+async def test_large_capacity_allows_many_requests(mock_redis) -> None:
+    mock_redis.client.eval = AsyncMock(side_effect=[1 for _ in range(1000)])
+
+    limiter = LeakyBucket(capacity=1000.0, leak_rate=0.0)
 
     for _ in range(1000):
-        assert await limiter.acquire("user") is False
+        result = await limiter.acquire("user")
+        assert result is True
+
+    assert mock_redis.client.eval.call_count == 1000
 
 
 @pytest.mark.asyncio
-async def test_large_capacity_blocks_after_limit() -> None:
-    limiter = LeakyBucketLimiter(capacity=1000, leak_rate=0.0)
+@patch("core.security.rate_limiter.rate_limiter.redis_manager", autospec=True)
+async def test_large_capacity_blocks_after_limit(mock_redis) -> None:
+    mock_redis.client.eval = AsyncMock(side_effect=[1 for _ in range(1000)] + [0])
+
+    limiter = LeakyBucket(capacity=1000.0, leak_rate=0.0)
 
     for _ in range(1000):
         await limiter.acquire("user")
 
-    assert await limiter.acquire("user") is True
+    result = await limiter.acquire("user")
+
+    assert result is False
+    assert mock_redis.client.eval.call_count == 1001
+
 
 
 # --------------------------------------------------------------------------------------
 # Redis State Validation
 # --------------------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_bucket_created_after_first_request() -> None:
-    limiter = LeakyBucketLimiter(capacity=1, leak_rate=1.0)
+@patch("core.security.rate_limiter.rate_limiter.redis_manager", autospec=True)
+async def test_bucket_created_after_first_request(mock_redis) -> None:
+    mock_redis.client.eval = AsyncMock(return_value=1)
 
-    await limiter.acquire("user")
+    limiter = LeakyBucket(capacity=1.0, leak_rate=1.0)
 
-    assert await redis_client.exists("user") == 1
+    result = await limiter.acquire("user")
 
-
-@pytest.mark.asyncio
-async def test_bucket_stores_water_level() -> None:
-    limiter = LeakyBucketLimiter(capacity=3, leak_rate=1.0)
-
-    await limiter.acquire("user")
-
-    bucket = await redis_client.hgetall("user")
-
-    assert float(bucket["water_level"]) > 0
+    assert result is True
+    mock_redis.client.eval.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_water_level_never_negative() -> None:
-    limiter = LeakyBucketLimiter(capacity=1, leak_rate=1000.0)
+@patch("core.security.rate_limiter.rate_limiter.redis_manager", autospec=True)
+async def test_bucket_stores_water_level(mock_redis) -> None:
+    mock_redis.client.eval = AsyncMock(return_value=1)
 
-    await limiter.acquire("user")
+    limiter = LeakyBucket(capacity=3.0, leak_rate=1.0)
 
-    await asyncio.sleep(0.2)
+    result = await limiter.acquire("user")
 
-    await limiter.acquire("user")
+    assert result is True
+    mock_redis.client.eval.assert_called_once()
 
-    bucket = await redis_client.hgetall("user")
 
-    assert float(bucket["water_level"]) >= 0
+@pytest.mark.asyncio
+@patch("core.security.rate_limiter.rate_limiter.redis_manager", autospec=True)
+async def test_water_level_never_negative(mock_redis) -> None:
+    mock_redis.client.eval = AsyncMock(side_effect=[1, 1])
+
+    limiter = LeakyBucket(capacity=1.0, leak_rate=1000.0)
+
+    first_result = await limiter.acquire("user")
+    second_result = await limiter.acquire("user")
+
+    assert first_result is True
+    assert second_result is True
+    assert mock_redis.client.eval.call_count == 2

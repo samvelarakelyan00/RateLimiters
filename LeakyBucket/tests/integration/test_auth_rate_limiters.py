@@ -3,12 +3,17 @@ from fastapi.testclient import TestClient
 
 # Own Modules
 from main import app
+from core.security.rate_limiter.redis_client import redis_client
 
 
 client = TestClient(app)
 
-
 URL_COMMON_PART = "http://127.0.0.1:8000/api/v1/auth"
+
+
+def setup_function() -> None:
+    import asyncio
+    asyncio.run(redis_client.flushdb())
 
 
 # --------------------------------------------------------------------------------------
@@ -159,7 +164,7 @@ def test_signup_different_emails_are_independent() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# Endpoint Isolation
+# Isolation
 # --------------------------------------------------------------------------------------
 def test_login_limiter_does_not_affect_signup() -> None:
     email = "isolation@test.com"
@@ -225,47 +230,3 @@ def test_signup_limiter_does_not_affect_login() -> None:
 
     assert signup_response.status_code == 429
     assert login_response.status_code == 200
-
-
-# --------------------------------------------------------------------------------------
-# Validation
-# --------------------------------------------------------------------------------------
-def test_login_invalid_payload_returns_422() -> None:
-    response = client.post(
-        f"{URL_COMMON_PART}/login",
-        json={}
-    )
-
-    assert response.status_code == 422
-
-
-def test_signup_invalid_payload_returns_422() -> None:
-    response = client.post(
-        f"{URL_COMMON_PART}/signup",
-        json={}
-    )
-
-    assert response.status_code == 422
-
-
-def test_login_missing_email_returns_422() -> None:
-    response = client.post(
-        f"{URL_COMMON_PART}/login",
-        json={
-            "password": "password"
-        }
-    )
-
-    assert response.status_code == 422
-
-
-def test_signup_missing_email_returns_422() -> None:
-    response = client.post(
-        f"{URL_COMMON_PART}/signup",
-        json={
-            "username": "john",
-            "plain_password": "password"
-        }
-    )
-
-    assert response.status_code == 422

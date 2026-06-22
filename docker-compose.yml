@@ -3,12 +3,25 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: rate-limit-api
+      args:
+        - ENV_STATE=${ENV_STATE}
+    container_name: leaky_bucket_container
     ports:
       - "8000:8000"
+    volumes:
+      - leaky_bucket_rate_limiter_logs:/RateLimiters/LeakyBucket/logs
     environment:
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+        - ENV_STATE=${ENV_STATE}
+        - DEBUG=${DEBUG}
+        - REDIS_HOST=${REDIS_HOST}
+        - REDIS_PORT=${REDIS_PORT}
+        - REDIS_DB=${REDIS_DB}
+        - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS}
+        - LOG_LEVEL=${LOG_LEVEL}
+        - LOG_JSON_FORMAT=${LOG_JSON_FORMAT}
+        - LOG_MAX_BYTES=${LOG_MAX_BYTES}
+        - LOG_BACKUP_COUNT=${LOG_BACKUP_COUNT}
+        - LOG_DIR=${LOG_DIR}
     depends_on:
       - redis
     command: uv run uvicorn main:app --port 8000 --host 0.0.0.0
@@ -17,5 +30,11 @@ services:
     image: redis:8-alpine
     container_name: rate-limit-redis
     ports:
-      - "6379:6379"
+      - ${REDIS_PORT}:${REDIS_PORT}
+    volumes:
+      - redis_data:/data
     restart: unless-stopped
+
+volumes:
+  redis_data:
+  leaky_bucket_rate_limiter_logs:

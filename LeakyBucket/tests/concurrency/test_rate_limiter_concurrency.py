@@ -6,6 +6,7 @@ import pytest
 
 # Own Modules
 from core.security.rate_limiter.rate_limiter import LeakyBucketLimiter
+from core.security.rate_limiter.redis_client import redis_client
 
 
 # --------------------------------------------------------------------------------------
@@ -25,11 +26,8 @@ async def test_same_key_capacity_one() -> None:
         *[worker() for _ in range(100)]
     )
 
-    allowed = sum(result is False for result in results)
-    blocked = sum(result is True for result in results)
-
-    assert allowed == 1
-    assert blocked == 99
+    assert sum(r is False for r in results) == 1
+    assert sum(r is True for r in results) == 99
 
 
 @pytest.mark.asyncio
@@ -46,11 +44,8 @@ async def test_same_key_capacity_five() -> None:
         *[worker() for _ in range(100)]
     )
 
-    allowed = sum(result is False for result in results)
-    blocked = sum(result is True for result in results)
-
-    assert allowed == 5
-    assert blocked == 95
+    assert sum(r is False for r in results) == 5
+    assert sum(r is True for r in results) == 95
 
 
 @pytest.mark.asyncio
@@ -67,15 +62,12 @@ async def test_same_key_capacity_ten() -> None:
         *[worker() for _ in range(1000)]
     )
 
-    allowed = sum(result is False for result in results)
-    blocked = sum(result is True for result in results)
-
-    assert allowed == 10
-    assert blocked == 990
+    assert sum(r is False for r in results) == 10
+    assert sum(r is True for r in results) == 990
 
 
 # --------------------------------------------------------------------------------------
-# Different Keys Concurrency
+# Different Keys
 # --------------------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_different_keys_all_allowed() -> None:
@@ -91,9 +83,7 @@ async def test_different_keys_all_allowed() -> None:
         *[worker(i) for i in range(100)]
     )
 
-    allowed = sum(result is False for result in results)
-
-    assert allowed == 100
+    assert sum(r is False for r in results) == 100
 
 
 @pytest.mark.asyncio
@@ -110,13 +100,11 @@ async def test_many_unique_keys() -> None:
         *[worker(i) for i in range(1000)]
     )
 
-    allowed = sum(result is False for result in results)
-
-    assert allowed == 1000
+    assert sum(r is False for r in results) == 1000
 
 
 # --------------------------------------------------------------------------------------
-# State Consistency
+# Redis State Consistency
 # --------------------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_bucket_water_level_never_exceeds_capacity() -> None:
@@ -132,9 +120,9 @@ async def test_bucket_water_level_never_exceeds_capacity() -> None:
         *[worker() for _ in range(100)]
     )
 
-    water_level, _ = limiter._buckets["user"]
+    bucket = await redis_client.hgetall("user")
 
-    assert water_level <= 3
+    assert float(bucket["water_level"]) <= 3
 
 
 @pytest.mark.asyncio
@@ -151,7 +139,7 @@ async def test_bucket_created_once_for_same_key() -> None:
         *[worker() for _ in range(100)]
     )
 
-    assert len(limiter._buckets) == 1
+    assert await redis_client.exists("user") == 1
 
 
 @pytest.mark.asyncio
@@ -168,7 +156,7 @@ async def test_bucket_count_matches_unique_keys() -> None:
         *[worker(i) for i in range(100)]
     )
 
-    assert len(limiter._buckets) == 100
+    assert len(await redis_client.keys("user_*")) == 100
 
 
 # --------------------------------------------------------------------------------------
@@ -188,9 +176,7 @@ async def test_ten_thousand_concurrent_requests() -> None:
         *[worker() for _ in range(10000)]
     )
 
-    allowed = sum(result is False for result in results)
-
-    assert allowed == 100
+    assert sum(r is False for r in results) == 100
 
 
 @pytest.mark.asyncio
@@ -207,9 +193,7 @@ async def test_fifty_thousand_requests_same_key() -> None:
         *[worker() for _ in range(50000)]
     )
 
-    allowed = sum(result is False for result in results)
-
-    assert allowed == 50
+    assert sum(r is False for r in results) == 50
 
 
 # --------------------------------------------------------------------------------------

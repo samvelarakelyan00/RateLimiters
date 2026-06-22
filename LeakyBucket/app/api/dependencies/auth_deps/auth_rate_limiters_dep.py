@@ -2,38 +2,27 @@
 from fastapi import Request
 
 # Own Modules
-from core.security.rate_limiter import RateLimitGuard
+from core.security.rate_limiter.rate_limit_guard import RateLimitGuard
 from core.security.rate_limiter.rate_limit_profiles import (
-    LOGIN_IP_LIMITER, LOGIN_EMAIL_LIMITER,
     SIGNUP_IP_LIMITER, SIGNUP_EMAIL_LIMITER,
-    DEFAULT_IP_LIMITER, DEFAULT_ACCOUNT_LIMITER
+    LOGIN_IP_LIMITER, LOGIN_EMAIL_LIMITER
 )
 
-#
-# def get_signup_rate_limiter() -> RateLimitGuard:
-#     return RateLimitGuard("signup", SIGNUP_IP_LIMITER, SIGNUP_EMAIL_LIMITER)
-
-async def get_signup_rate_limiter(
-    request: Request
-) -> None:
-
+async def get_signup_rate_limiter(request: Request) -> None:
     guard = RateLimitGuard(
-        "signup",
-        SIGNUP_IP_LIMITER,
-        SIGNUP_EMAIL_LIMITER
+        endpoint_identifier="signup",
+        ip_limiter=SIGNUP_IP_LIMITER,
+        account_limiter=SIGNUP_EMAIL_LIMITER
     )
 
     await guard(request)
 
 
-async def get_login_rate_limiter(
-    request: Request
-) -> None:
-
+async def get_login_rate_limiter(request: Request) -> None:
     guard = RateLimitGuard(
-        "login",
-        LOGIN_IP_LIMITER,
-        LOGIN_EMAIL_LIMITER
+        endpoint_identifier="login",
+        ip_limiter=LOGIN_IP_LIMITER,
+        account_limiter=LOGIN_EMAIL_LIMITER
     )
 
     await guard(request)

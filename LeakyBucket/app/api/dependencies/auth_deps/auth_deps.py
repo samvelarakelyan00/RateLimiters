@@ -1,6 +1,3 @@
-# Non-Standard libs
-from fastapi import Depends
-
 # Own Modules
 from services.auth import AuthService
 

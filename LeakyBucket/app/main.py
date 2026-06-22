@@ -1,27 +1,35 @@
+# Standard libs
+from contextlib import asynccontextmanager
+
 # Non-Standard libs
 from fastapi import FastAPI
 
 # Own Modules
 from api.v1 import v1_router
-from core.security.rate_limiter.startup import (
-    verify_redis_connection
-)
+from core.security.rate_limiter.redis_manager import redis_manager
 
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("Server started...")
+
+    # Verify Redis Connection
+    try:
+        await redis_manager.verify_redis_connection()
+        print("Redis connection verified...")
+    except Exception as error:
+        raise error
+
+    yield
 
 
-@app.on_event("startup")
-async def startup() -> None:
-    await verify_redis_connection()
+app = FastAPI(lifespan=lifespan)
 
 
 @app.get("/")
-async def root():
-    return {"message": "Hello World"}
+def read_root():
+    return {"Hello": "World"}
 
 
-app.include_router(
-    v1_router,
-    prefix="/api"
-)
+app.include_router(v1_router,
+                   prefix="/api")

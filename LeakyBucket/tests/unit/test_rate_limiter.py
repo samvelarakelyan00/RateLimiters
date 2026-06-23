@@ -44,18 +44,21 @@ async def test_second_request_is_allowed_before_capacity(mock_redis) -> None:
 @pytest.mark.asyncio
 @patch("core.security.rate_limiter.rate_limiter.redis_manager", autospec=True)
 async def test_fourth_request_exceeds_capacity_and_is_denied(mock_redis) -> None:
-    mock_redis.client.eval = AsyncMock(side_effect=[1, 1, 1])
+    mock_redis.client.eval = AsyncMock(side_effect=[1, 1, 1, 0])
 
     limiter = LeakyBucket(capacity=3.0, leak_rate=1.0)
 
     res1 = await limiter.acquire("user")
     res2 = await limiter.acquire("user")
     res3 = await limiter.acquire("user")
+    res4 = await limiter.acquire("user")
+
 
     assert res1 is True
     assert res2 is True
     assert res3 is True
-    assert mock_redis.client.eval.call_count == 3
+    assert res4 is False
+    assert mock_redis.client.eval.call_count == 4
 
 
 @pytest.mark.asyncio
@@ -165,7 +168,7 @@ async def test_bucket_recovers_after_leak_period(mock_redis) -> None:
 @pytest.mark.asyncio
 @patch("core.security.rate_limiter.rate_limiter.redis_manager", autospec=True)
 async def test_partial_leak_does_not_fully_reset_bucket(mock_redis) -> None:
-    mock_redis.client.eval = AsyncMock(side_effect=[1, 1, 0, 1])
+    mock_redis.client.eval = AsyncMock(side_effect=[1, 1, 0, 1, 0])
 
     limiter = LeakyBucket(capacity=2.0, leak_rate=1.0)
 
@@ -173,12 +176,14 @@ async def test_partial_leak_does_not_fully_reset_bucket(mock_redis) -> None:
     second_result = await limiter.acquire("user")
     third_result = await limiter.acquire("user")
     fourth_result = await limiter.acquire("user")
+    fifth_result = await limiter.acquire("user")
 
     assert first_result is True
     assert second_result is True
     assert third_result is False
     assert fourth_result is True
-    assert mock_redis.client.eval.call_count == 4
+    assert fifth_result is False
+    assert mock_redis.client.eval.call_count == 5
 
 
 @pytest.mark.asyncio

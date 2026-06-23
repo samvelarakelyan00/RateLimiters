@@ -1,10 +1,12 @@
 # Standard libs
 from typing import Generator, AsyncGenerator
+from httpx import AsyncClient, ASGITransport
 
 # Non-Standard libs
 import pytest
 import redis.asyncio as aioredis
 from testcontainers.redis import RedisContainer
+from app.main import app
 
 
 @pytest.fixture(scope="session")
@@ -38,3 +40,9 @@ async def test_redis_client(redis_container) -> AsyncGenerator[aioredis.Redis, N
     # Post-test cleanup
     await client.flushdb()
     await client.aclose()
+
+
+@pytest.fixture(scope="function")
+async def async_http_client() -> AsyncGenerator[AsyncClient, None]:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        yield client

@@ -1,35 +1,30 @@
+# Standard libs
+from httpx import AsyncClient
+
 # Non-Standard libs
-from fastapi.testclient import TestClient
-
-# Own Modules
-from main import app
-from core.security.rate_limiter.redis_client import redis_client
+import pytest
 
 
-client = TestClient(app)
-
-URL_COMMON_PART = "http://127.0.0.1:8000/api/v1/auth"
-
-
-def setup_function() -> None:
-    import asyncio
-    asyncio.run(redis_client.flushdb())
+URL_COMMON_PART = "/api/v1/auth"
 
 
 # --------------------------------------------------------------------------------------
 # Root Endpoint
 # --------------------------------------------------------------------------------------
-def test_root_returns_200() -> None:
-    response = client.get("/")
-
+@pytest.mark.asyncio
+async def test_root_returns_200(async_http_client: AsyncClient) -> None:
+    response = await async_http_client.get("/")
     assert response.status_code == 200
 
 
 # --------------------------------------------------------------------------------------
 # Login Endpoint
 # --------------------------------------------------------------------------------------
-def test_login_first_request_allowed() -> None:
-    response = client.post(
+@pytest.mark.asyncio
+async def test_login_first_request_allowed(async_http_client: AsyncClient, test_redis_client, monkeypatch) -> None:
+    monkeypatch.setattr("core.security.rate_limiter.redis_manager.redis_manager.client", test_redis_client)
+
+    response = await async_http_client.post(
         f"{URL_COMMON_PART}/login",
         json={
             "email": "first@test.com",
@@ -40,11 +35,14 @@ def test_login_first_request_allowed() -> None:
     assert response.status_code == 200
 
 
-def test_login_email_capacity_blocks_fourth_request() -> None:
+@pytest.mark.asyncio
+async def test_login_email_capacity_blocks_fourth_request(async_http_client: AsyncClient, test_redis_client, monkeypatch) -> None:
+    monkeypatch.setattr("core.security.rate_limiter.redis_manager.redis_manager.client", test_redis_client)
+
     email = "blocked@test.com"
 
     for _ in range(3):
-        client.post(
+        await async_http_client.post(
             f"{URL_COMMON_PART}/login",
             json={
                 "email": email,
@@ -52,7 +50,7 @@ def test_login_email_capacity_blocks_fourth_request() -> None:
             }
         )
 
-    response = client.post(
+    response = await async_http_client.post(
         f"{URL_COMMON_PART}/login",
         json={
             "email": email,
@@ -63,8 +61,11 @@ def test_login_email_capacity_blocks_fourth_request() -> None:
     assert response.status_code == 429
 
 
-def test_login_email_normalization() -> None:
-    client.post(
+@pytest.mark.asyncio
+async def test_login_email_normalization(async_http_client: AsyncClient, test_redis_client, monkeypatch) -> None:
+    monkeypatch.setattr("core.security.rate_limiter.redis_manager.redis_manager.client", test_redis_client)
+
+    await async_http_client.post(
         f"{URL_COMMON_PART}/login",
         json={
             "email": "TestUser@gmail.com",
@@ -72,7 +73,7 @@ def test_login_email_normalization() -> None:
         }
     )
 
-    client.post(
+    await async_http_client.post(
         f"{URL_COMMON_PART}/login",
         json={
             "email": "testuser@gmail.com",
@@ -80,7 +81,7 @@ def test_login_email_normalization() -> None:
         }
     )
 
-    client.post(
+    await async_http_client.post(
         f"{URL_COMMON_PART}/login",
         json={
             "email": "TESTUSER@gmail.com",
@@ -88,7 +89,7 @@ def test_login_email_normalization() -> None:
         }
     )
 
-    response = client.post(
+    response = await async_http_client.post(
         f"{URL_COMMON_PART}/login",
         json={
             "email": "testuser@gmail.com",
@@ -99,11 +100,11 @@ def test_login_email_normalization() -> None:
     assert response.status_code == 429
 
 
-# --------------------------------------------------------------------------------------
-# Signup Endpoint
-# --------------------------------------------------------------------------------------
-def test_signup_first_request_allowed() -> None:
-    response = client.post(
+@pytest.mark.asyncio
+async def test_signup_first_request_allowed(async_http_client: AsyncClient, test_redis_client, monkeypatch) -> None:
+    monkeypatch.setattr("core.security.rate_limiter.redis_manager.redis_manager.client", test_redis_client)
+
+    response = await async_http_client.post(
         f"{URL_COMMON_PART}/signup",
         json={
             "username": "john",
@@ -115,10 +116,13 @@ def test_signup_first_request_allowed() -> None:
     assert response.status_code == 201
 
 
-def test_signup_email_limit_blocks_second_request() -> None:
+@pytest.mark.asyncio
+async def test_signup_email_limit_blocks_third_request(async_http_client: AsyncClient, test_redis_client, monkeypatch) -> None:
+    monkeypatch.setattr("core.security.rate_limiter.redis_manager.redis_manager.client", test_redis_client)
+
     email = "signup@test.com"
 
-    response_1 = client.post(
+    response_1 = await async_http_client.post(
         f"{URL_COMMON_PART}/signup",
         json={
             "username": "john",
@@ -127,7 +131,7 @@ def test_signup_email_limit_blocks_second_request() -> None:
         }
     )
 
-    response_2 = client.post(
+    response_2 = await async_http_client.post(
         f"{URL_COMMON_PART}/signup",
         json={
             "username": "john2",
@@ -136,12 +140,25 @@ def test_signup_email_limit_blocks_second_request() -> None:
         }
     )
 
+    response_3 = await async_http_client.post(
+        f"{URL_COMMON_PART}/signup",
+        json={
+            "username": "john3",
+            "email": email,
+            "plain_password": "password"
+        }
+    )
+
     assert response_1.status_code == 201
-    assert response_2.status_code == 429
+    assert response_2.status_code == 201
+    assert response_3.status_code == 429
 
 
-def test_signup_different_emails_are_independent() -> None:
-    response_1 = client.post(
+@pytest.mark.asyncio
+async def test_signup_different_emails_are_independent(async_http_client: AsyncClient, test_redis_client, monkeypatch) -> None:
+    monkeypatch.setattr("core.security.rate_limiter.redis_manager.redis_manager.client", test_redis_client)
+
+    response_1 = await async_http_client.post(
         f"{URL_COMMON_PART}/signup",
         json={
             "username": "user1",
@@ -150,7 +167,7 @@ def test_signup_different_emails_are_independent() -> None:
         }
     )
 
-    response_2 = client.post(
+    response_2 = await async_http_client.post(
         f"{URL_COMMON_PART}/signup",
         json={
             "username": "user2",
@@ -163,14 +180,14 @@ def test_signup_different_emails_are_independent() -> None:
     assert response_2.status_code == 201
 
 
-# --------------------------------------------------------------------------------------
-# Isolation
-# --------------------------------------------------------------------------------------
-def test_login_limiter_does_not_affect_signup() -> None:
+@pytest.mark.asyncio
+async def test_login_limiter_does_not_affect_signup(async_http_client: AsyncClient, test_redis_client, monkeypatch) -> None:
+    monkeypatch.setattr("core.security.rate_limiter.redis_manager.redis_manager.client", test_redis_client)
+
     email = "isolation@test.com"
 
     for _ in range(3):
-        client.post(
+        await async_http_client.post(
             f"{URL_COMMON_PART}/login",
             json={
                 "email": email,
@@ -178,7 +195,7 @@ def test_login_limiter_does_not_affect_signup() -> None:
             }
         )
 
-    login_response = client.post(
+    login_response = await async_http_client.post(
         f"{URL_COMMON_PART}/login",
         json={
             "email": email,
@@ -186,7 +203,7 @@ def test_login_limiter_does_not_affect_signup() -> None:
         }
     )
 
-    signup_response = client.post(
+    signup_response = await async_http_client.post(
         f"{URL_COMMON_PART}/signup",
         json={
             "username": "john",
@@ -199,10 +216,13 @@ def test_login_limiter_does_not_affect_signup() -> None:
     assert signup_response.status_code == 201
 
 
-def test_signup_limiter_does_not_affect_login() -> None:
+@pytest.mark.asyncio
+async def test_signup_limiter_does_not_affect_login(async_http_client: AsyncClient, test_redis_client, monkeypatch) -> None:
+    monkeypatch.setattr("core.security.rate_limiter.redis_manager.redis_manager.client", test_redis_client)
+
     email = "cross@test.com"
 
-    client.post(
+    await async_http_client.post(
         f"{URL_COMMON_PART}/signup",
         json={
             "username": "john",
@@ -211,7 +231,7 @@ def test_signup_limiter_does_not_affect_login() -> None:
         }
     )
 
-    signup_response = client.post(
+    await async_http_client.post(
         f"{URL_COMMON_PART}/signup",
         json={
             "username": "john2",
@@ -220,7 +240,16 @@ def test_signup_limiter_does_not_affect_login() -> None:
         }
     )
 
-    login_response = client.post(
+    signup_response = await async_http_client.post(
+        f"{URL_COMMON_PART}/signup",
+        json={
+            "username": "john3",
+            "email": email,
+            "plain_password": "password"
+        }
+    )
+
+    login_response = await async_http_client.post(
         f"{URL_COMMON_PART}/login",
         json={
             "email": email,

@@ -30,7 +30,7 @@ async def test_redis_client(redis_container) -> AsyncGenerator[aioredis.Redis, N
     port = redis_container.get_exposed_port(redis_container.port)
 
     # Initialize the real connection client
-    client = aioredis.Redis(host=host, port=int(port), decode_responses=True)
+    client = aioredis.Redis(host=host, port=int(port), decode_responses=True, max_connections=50000)
 
     # Pre-test cleanup
     await client.flushdb()

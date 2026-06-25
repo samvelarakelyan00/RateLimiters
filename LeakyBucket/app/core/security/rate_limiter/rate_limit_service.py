@@ -46,12 +46,12 @@ class RateLimitService:
     def raise_ip_limit_exceeded() -> None:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Your IP limit exceeded; please try again later!"
+            detail="Leaky Bucket -> Your IP limit exceeded; please try again later!"
         )
 
     @staticmethod
     def raise_email_limit_exceeded() -> None:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Your email limit exceeded; please try again later!"
+            detail="Leaky Bucket -> Your email limit exceeded; please try again later!"
         )

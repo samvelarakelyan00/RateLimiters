@@ -5,11 +5,11 @@ services:
       dockerfile: Dockerfile
       args:
         - ENV_STATE=${ENV_STATE}
-    container_name: leaky_bucket_container
+    container_name: token_bucket_container
     ports:
       - "8000:8000"
     volumes:
-      - leaky_bucket_rate_limiter_logs:/RateLimiters/LeakyBucket/logs
+      - token_bucket_rate_limiter_logs:/logs
     environment:
         - ENV_STATE=${ENV_STATE}
         - DEBUG=${DEBUG}
@@ -37,4 +37,4 @@ services:
 
 volumes:
   redis_data:
-  leaky_bucket_rate_limiter_logs:
+  token_bucket_rate_limiter_logs:

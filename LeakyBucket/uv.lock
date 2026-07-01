@@ -542,6 +542,29 @@ wheels = [
 ]
 
 [[package]]
+name = "leakybucket"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "boto3" },
+    { name = "fastapi", extra = ["all"] },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "redis", extra = ["hiredis"] },
+    { name = "testcontainers", extra = ["redis"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "boto3", specifier = ">=1.43.34" },
+    { name = "fastapi", extras = ["all"], specifier = ">=0.136.3" },
+    { name = "pytest", specifier = ">=9.1.0" },
+    { name = "pytest-asyncio", specifier = ">=1.4.0" },
+    { name = "redis", extras = ["hiredis"], specifier = ">=8.0.0" },
+    { name = "testcontainers", extras = ["redis"], specifier = ">=4.14.2" },
+]
+
+[[package]]
 name = "markdown-it-py"
 version = "4.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -775,12 +798,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pytess"
-version = "1.0.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/12/f6/b687d1684d5db29e0a014dbafce6d0ec120353719631265c7f612bb41a4c/Pytess-1.0.0.tar.gz", hash = "sha256:fc93975413d8249d746e27519e09e8af2a8ae947c1994709d3320bd17ee7de09", size = 11744, upload-time = "2018-09-13T05:38:29.323Z" }
-
-[[package]]
 name = "pytest"
 version = "9.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -902,43 +919,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/da/92/1446574745d74df0c92e6aa4a7b0b3130706a4142b2d1a5869f2eaa423c6/pyyaml-6.0.3-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:16249ee61e95f858e83976573de0f5b2893b3677ba71c9dd36b9cf8be9ac6d65", size = 829923, upload-time = "2025-09-25T21:32:54.537Z" },
     { url = "https://files.pythonhosted.org/packages/f0/7a/1c7270340330e575b92f397352af856a8c06f230aa3e76f86b39d01b416a/pyyaml-6.0.3-cp314-cp314t-win_amd64.whl", hash = "sha256:4ad1906908f2f5ae4e5a8ddfce73c320c2a1429ec52eafd27138b7f1cbe341c9", size = 174062, upload-time = "2025-09-25T21:32:55.767Z" },
     { url = "https://files.pythonhosted.org/packages/f1/12/de94a39c2ef588c7e6455cfbe7343d3b2dc9d6b6b2f40c4c6565744c873d/pyyaml-6.0.3-cp314-cp314t-win_arm64.whl", hash = "sha256:ebc55a14a21cb14062aa4162f906cd962b28e2e9ea38f9b4391244cd8de4ae0b", size = 149341, upload-time = "2025-09-25T21:32:56.828Z" },
-]
-
-[[package]]
-name = "ratelimiters"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "boto3" },
-    { name = "fastapi", extra = ["all"] },
-    { name = "pytess" },
-    { name = "pytest-asyncio" },
-    { name = "redis", extra = ["hiredis"] },
-    { name = "requests" },
-    { name = "testcontainers", extra = ["redis"] },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "boto3", specifier = ">=1.43.34" },
-    { name = "fastapi", extras = ["all"], specifier = ">=0.136.3" },
-    { name = "pytess", specifier = ">=1.0.0" },
-    { name = "pytest-asyncio", specifier = ">=1.4.0" },
-    { name = "redis", extras = ["hiredis"], specifier = ">=8.0.0" },
-    { name = "requests", specifier = ">=2.34.2" },
-    { name = "testcontainers", extras = ["redis"], specifier = ">=4.14.2" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=9.1.0" },
-    { name = "pytest-asyncio", specifier = ">=1.4.0" },
 ]
 
 [[package]]

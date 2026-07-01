@@ -9,7 +9,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - leaky_bucket_rate_limiter_logs:/RateLimiters/LeakyBucket/logs
+      - leaky_bucket_rate_limiter_logs:/logs
     environment:
         - ENV_STATE=${ENV_STATE}
         - DEBUG=${DEBUG}

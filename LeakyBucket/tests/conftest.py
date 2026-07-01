@@ -6,7 +6,7 @@ from httpx import AsyncClient, ASGITransport
 import pytest
 import redis.asyncio as aioredis
 from testcontainers.redis import RedisContainer
-from app.main import app
+from LeakyBucket.app.main import app
 
 
 @pytest.fixture(scope="session")

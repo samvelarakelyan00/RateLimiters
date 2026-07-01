@@ -28,7 +28,7 @@ app = FastAPI(lifespan=lifespan)
 
 @app.get("/")
 def read_root():
-    return {"Hello": "World"}
+    return {"Rate Limiter": "Leaky Bucket"}
 
 
 app.include_router(v1_router,

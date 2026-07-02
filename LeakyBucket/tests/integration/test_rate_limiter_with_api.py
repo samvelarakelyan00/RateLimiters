@@ -11,7 +11,7 @@ URL_COMMON_PART = "/api/v1/auth"
 # --------------------------------------------------------------------------------------
 # Root Endpoint
 # --------------------------------------------------------------------------------------
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_root_returns_200(async_http_client: AsyncClient) -> None:
     response = await async_http_client.get("/")
     assert response.status_code == 200
@@ -20,7 +20,7 @@ async def test_root_returns_200(async_http_client: AsyncClient) -> None:
 # --------------------------------------------------------------------------------------
 # Login Endpoint
 # --------------------------------------------------------------------------------------
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_login_first_request_allowed(async_http_client: AsyncClient, test_redis_client, monkeypatch) -> None:
     monkeypatch.setattr("core.security.rate_limiter.redis_manager.redis_manager.client", test_redis_client)
 
@@ -35,7 +35,7 @@ async def test_login_first_request_allowed(async_http_client: AsyncClient, test_
     assert response.status_code == 200
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_login_email_capacity_blocks_fourth_request(async_http_client: AsyncClient, test_redis_client, monkeypatch) -> None:
     monkeypatch.setattr("core.security.rate_limiter.redis_manager.redis_manager.client", test_redis_client)
 
@@ -61,7 +61,7 @@ async def test_login_email_capacity_blocks_fourth_request(async_http_client: Asy
     assert response.status_code == 429
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_login_email_normalization(async_http_client: AsyncClient, test_redis_client, monkeypatch) -> None:
     monkeypatch.setattr("core.security.rate_limiter.redis_manager.redis_manager.client", test_redis_client)
 
@@ -100,7 +100,8 @@ async def test_login_email_normalization(async_http_client: AsyncClient, test_re
     assert response.status_code == 429
 
 
-@pytest.mark.asyncio
+
+@pytest.mark.asyncio(loop_scope="session")
 async def test_signup_first_request_allowed(async_http_client: AsyncClient, test_redis_client, monkeypatch) -> None:
     monkeypatch.setattr("core.security.rate_limiter.redis_manager.redis_manager.client", test_redis_client)
 
@@ -116,7 +117,7 @@ async def test_signup_first_request_allowed(async_http_client: AsyncClient, test
     assert response.status_code == 201
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_signup_email_limit_blocks_third_request(async_http_client: AsyncClient, test_redis_client, monkeypatch) -> None:
     monkeypatch.setattr("core.security.rate_limiter.redis_manager.redis_manager.client", test_redis_client)
 
@@ -154,7 +155,7 @@ async def test_signup_email_limit_blocks_third_request(async_http_client: AsyncC
     assert response_3.status_code == 429
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_signup_different_emails_are_independent(async_http_client: AsyncClient, test_redis_client, monkeypatch) -> None:
     monkeypatch.setattr("core.security.rate_limiter.redis_manager.redis_manager.client", test_redis_client)
 
@@ -180,7 +181,7 @@ async def test_signup_different_emails_are_independent(async_http_client: AsyncC
     assert response_2.status_code == 201
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_login_limiter_does_not_affect_signup(async_http_client: AsyncClient, test_redis_client, monkeypatch) -> None:
     monkeypatch.setattr("core.security.rate_limiter.redis_manager.redis_manager.client", test_redis_client)
 
@@ -216,7 +217,7 @@ async def test_login_limiter_does_not_affect_signup(async_http_client: AsyncClie
     assert signup_response.status_code == 201
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_signup_limiter_does_not_affect_login(async_http_client: AsyncClient, test_redis_client, monkeypatch) -> None:
     monkeypatch.setattr("core.security.rate_limiter.redis_manager.redis_manager.client", test_redis_client)
 

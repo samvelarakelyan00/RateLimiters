@@ -25,9 +25,12 @@ async def test_same_key_capacity_one_concurrency(test_redis_client, monkeypatch)
     assert sum(r is True for r in results) == 1
     assert sum(r is False for r in results) == 99
 
-    stored_user = await test_redis_client.hgetall("docker_concurrency_user")
-    assert float(stored_user["water_level"]) == pytest.approx(1.0, abs=1e-2)
+    stored_data = await test_redis_client.get("docker_concurrency_user")
+    assert stored_data is not None
 
+    water_level_str = stored_data.split(":")[0]
+    water_level = float(water_level_str)
+    assert water_level == pytest.approx(1.0, abs=1e-2)
 
 
 @pytest.mark.asyncio
@@ -44,8 +47,12 @@ async def test_same_key_capacity_five_concurrency(test_redis_client, monkeypatch
     assert sum(r is True for r in results) == 5
     assert sum(r is False for r in results) == 95
 
-    stored_user = await test_redis_client.hgetall("docker_concurrency_user")
-    assert float(stored_user["water_level"]) == pytest.approx(5.0, abs=1e-2)
+    stored_data = await test_redis_client.get("docker_concurrency_user")
+    assert stored_data is not None
+
+    water_level_str = stored_data.split(":")[0]
+    water_level = float(water_level_str)
+    assert water_level == pytest.approx(5.0, abs=1e-2)
 
 
 @pytest.mark.asyncio
@@ -62,8 +69,12 @@ async def test_same_key_capacity_ten_concurrency(test_redis_client, monkeypatch)
     assert sum(r is True for r in results) == 10
     assert sum(r is False for r in results) == 990
 
-    stored_user = await test_redis_client.hgetall("docker_concurrency_user")
-    assert float(stored_user["water_level"]) == pytest.approx(10.0, abs=1e-2)
+    stored_data = await test_redis_client.get("docker_concurrency_user")
+    assert stored_data is not None
+
+    water_level_str = stored_data.split(":")[0]
+    water_level = float(water_level_str)
+    assert water_level == pytest.approx(10.0, abs=1e-2)
 
 
 # --------------------------------------------------------------------------------------
@@ -83,8 +94,13 @@ async def test_different_keys_all_allowed_concurrency(test_redis_client, monkeyp
     assert sum(r is True for r in results) == 100
 
     for i in range(100):
-        stored_user = await test_redis_client.hgetall(f"docker_user_{i}")
-        assert float(stored_user["water_level"]) == pytest.approx(1.0, abs=1e-2)
+
+        stored_data = await test_redis_client.get(f"docker_user_{i}")
+        assert stored_data is not None
+
+        water_level_str = stored_data.split(":")[0]
+        water_level = float(water_level_str)
+        assert water_level == pytest.approx(1.0, abs=1e-2)
 
 
 @pytest.mark.asyncio
@@ -115,9 +131,12 @@ async def test_bucket_water_level_never_exceeds_capacity_concurrency(test_redis_
 
     await asyncio.gather(*[worker() for _ in range(100)])
 
-    bucket = await test_redis_client.hgetall("docker_concurrency_user")
+    stored_data = await test_redis_client.get("docker_concurrency_user")
+    assert stored_data is not None
 
-    assert float(bucket["water_level"]) <= 3.0
+    water_level_str = stored_data.split(":")[0]
+    water_level = float(water_level_str)
+    assert water_level <= 3.0
 
 
 @pytest.mark.asyncio
@@ -166,30 +185,49 @@ async def test_ten_thousand_concurrent_requests_stress(test_redis_client, monkey
     assert sum(r is True for r in results) == 100
     assert sum(r is False for r in results) == 9900
 
-    stored_user = await test_redis_client.hgetall("docker_stress_user")
-    assert float(stored_user["water_level"]) == pytest.approx(100.0, abs=1e-2)
+    stored_data = await test_redis_client.get("docker_stress_user")
+    assert stored_data is not None
+
+    water_level_str = stored_data.split(":")[0]
+    water_level = float(water_level_str)
+    assert water_level == pytest.approx(100.0, abs=1e-2)
 
 
-""" ============================ TimeoutError =================================
-            redis.exceptions.TimeoutError: Timeout connecting to server
+@pytest.mark.asyncio
+async def test_fifty_thousand_requests_same_key_stress(test_redis_client, monkeypatch) -> None:
+    """
+    Stress test with optimized connection pooling for CI environments.
+    """
+    monkeypatch.setattr("core.security.rate_limiter.redis_manager.redis_manager.client", test_redis_client)
 
-# @pytest.mark.asyncio
-# async def test_fifty_thousand_requests_same_key_stress(test_redis_client, monkeypatch) -> None:
-#     monkeypatch.setattr("core.security.rate_limiter.redis_manager.redis_manager.client", test_redis_client)
-# 
-#     limiter = LeakyBucket(capacity=50.0, leak_rate=0.0)
-# 
-#     async def worker():
-#         return await limiter.acquire("docker_stress_user")
-# 
-#     results = await asyncio.gather(*[worker() for _ in range(50000)])
-# 
-#     assert sum(r is True for r in results) == 50
-#     assert sum(r is False for r in results) == 49950
-# 
-#     stored_user = await test_redis_client.hgetall("docker_stress_user")
-#     assert float(stored_user["water_level"]) == pytest.approx(50.0, abs=1e-2)
-"""
+    # Reduce max connections for stress test to avoid resource exhaustion
+    test_redis_client.connection_pool.max_connections = 1000
+
+    limiter = LeakyBucket(capacity=50.0, leak_rate=0.0)
+
+    async def worker():
+        return await limiter.acquire("docker_stress_user")
+
+    # Use asyncio.gather with controlled chunk size
+    chunk_size = 1000
+    results = []
+
+    for chunk_start in range(0, 50000, chunk_size):
+        chunk_end = min(chunk_start + chunk_size, 50000)
+        chunk_results = await asyncio.gather(
+            *[worker() for _ in range(chunk_start, chunk_end)]
+        )
+        results.extend(chunk_results)
+
+    assert sum(r is True for r in results) == 50
+    assert sum(r is False for r in results) == 49950
+
+    stored_data = await test_redis_client.get("docker_stress_user")
+    assert stored_data is not None
+
+    water_level_str = stored_data.split(":")[0]
+    water_level = float(water_level_str)
+    assert water_level == pytest.approx(50.0, abs=1e-2)
 
 
 # --------------------------------------------------------------------------------------
@@ -209,8 +247,12 @@ async def test_no_double_allow_when_capacity_one_concurrency(test_redis_client, 
     assert results.count(True) == 1
     assert results.count(False) == 499
 
-    stored_user = await test_redis_client.hgetall("race_key")
-    assert float(stored_user["water_level"]) == pytest.approx(1.0, abs=1e-2)
+    stored_data = await test_redis_client.get("race_key")
+    assert stored_data is not None
+
+    water_level_str = stored_data.split(":")[0]
+    water_level = float(water_level_str)
+    assert water_level == pytest.approx(1.0, abs=1e-2)
 
 
 @pytest.mark.asyncio
@@ -227,5 +269,9 @@ async def test_no_double_allow_when_capacity_two_concurrency(test_redis_client, 
     assert results.count(True) == 2
     assert results.count(False) == 498
 
-    stored_user = await test_redis_client.hgetall("race_key")
-    assert float(stored_user["water_level"]) == pytest.approx(2.0, abs=1e-2)
+    stored_data = await test_redis_client.get("race_key")
+    assert stored_data is not None
+
+    water_level_str = stored_data.split(":")[0]
+    water_level = float(water_level_str)
+    assert water_level == pytest.approx(2.0, abs=1e-2)

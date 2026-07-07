@@ -8,6 +8,8 @@ import redis.asyncio as aioredis
 from testcontainers.redis import RedisContainer
 
 
+
+
 @pytest.fixture(scope="session")
 def redis_container() -> Generator[RedisContainer, None, None]:
     """
@@ -37,11 +39,36 @@ async def test_redis_client(redis_container, monkeypatch) -> AsyncGenerator[aior
     yield client
 
     await client.flushdb()
-    await client.aclose()
+    await client.aclose(close_connection_pool=True)
 
 
 @pytest.fixture(scope="function")
 async def async_http_client(test_redis_client) -> AsyncGenerator[AsyncClient, None]:
-    from LeakyBucket.app.main import app
+    from app.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
         yield client
+
+
+# @pytest.fixture(scope="function")
+# async def async_http_client_for_security_tests(test_redis_client) -> AsyncGenerator[AsyncClient, None]:
+#     """HTTP client specifically for security tests with proper event loop handling."""
+#     from app.main import app
+#     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+#         yield client
+#
+#
+# @pytest.fixture(scope="session")
+# def event_loop():
+#     """Create an instance of the default event loop for each test session."""
+#     import asyncio
+#     policy = asyncio.get_event_loop_policy()
+#     loop = policy.new_event_loop()
+#     yield loop
+#     loop.close()
+#
+#
+# @pytest.fixture(scope="function")
+# async def redis_cleaner(test_redis_client):
+#     """Clean up Redis after each test."""
+#     yield
+#     await test_redis_client.flushdb()

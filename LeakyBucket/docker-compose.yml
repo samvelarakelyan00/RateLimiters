@@ -50,6 +50,7 @@ services:
       - REDIS_PORT=6379
       - REDIS_DB=0
       - TEST_TYPE=${TEST_TYPE:-all}
+      - RUN_TESTS=true
       - DOCKER_HOST=unix:///var/run/docker.sock
       - PYTHONPATH=/LeakyBucket:/LeakyBucket/app
     depends_on:
@@ -59,9 +60,13 @@ services:
       nofile:
         soft: 65536
         hard: 65536
+    entrypoint: /bin/sh
     command: >
-      sh -c "
+      -c "
         cd /LeakyBucket &&
+        echo 'Waiting for Redis...' &&
+        while ! nc -z redis 6379; do sleep 1; done &&
+        echo 'Redis is ready!' &&
         echo 'Running tests...' &&
         if [ \"$TEST_TYPE\" = 'unit' ]; then
           uv run pytest tests/unit/ -v --tb=short
@@ -69,6 +74,8 @@ services:
           uv run pytest tests/integration/ -v --tb=short
         elif [ \"$TEST_TYPE\" = 'security' ]; then
           uv run pytest tests/security-abuse/ -v --tb=short
+        elif [ \"$TEST_TYPE\" = 'concurrency' ]; then
+          uv run pytest tests/concurrency/ -v --tb=short
         else
           uv run pytest tests/ -v --tb=short
         fi

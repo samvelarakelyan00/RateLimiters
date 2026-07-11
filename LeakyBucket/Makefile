@@ -26,16 +26,19 @@ up: ## Start containers without tests
 	$(DOCKER_COMPOSE) up --build
 
 up-tests: ## Start containers with all tests
-	RUN_TESTS=true TEST_TYPE=all $(DOCKER_COMPOSE) up
+	RUN_TESTS=true TEST_TYPE=all $(DOCKER_COMPOSE) up --build
 
 up-unit: ## Start containers with unit tests only
-	RUN_TESTS=true TEST_TYPE=unit $(DOCKER_COMPOSE) up
+	RUN_TESTS=true TEST_TYPE=unit $(DOCKER_COMPOSE) up --build
 
 up-integration: ## Start containers with integration tests only
-	RUN_TESTS=true TEST_TYPE=integration $(DOCKER_COMPOSE) up
+	RUN_TESTS=true TEST_TYPE=integration $(DOCKER_COMPOSE) up --build
 
 up-security: ## Start containers with security tests only
-	RUN_TESTS=true TEST_TYPE=security $(DOCKER_COMPOSE) up
+	RUN_TESTS=true TEST_TYPE=security $(DOCKER_COMPOSE) up --build
+
+up-concurrency: ## Start containers with security tests only
+	RUN_TESTS=true TEST_TYPE=concurrency $(DOCKER_COMPOSE) up --build
 
 up-dev: ## Start containers with tests and show output (not detached)
 	RUN_TESTS=true FAIL_ON_TEST_FAILURE=false $(DOCKER_COMPOSE) up --build
@@ -67,17 +70,23 @@ test-integration: ## Run integration tests locally
 test-security: ## Run security tests locally
 	$(DOCKER_COMPOSE) exec app sh -c "cd /LeakyBucket && uv run --python /LeakyBucket/app/.venv/bin/python pytest tests/security-abuse/ -v --tb=short"
 
+test-concurrency: ## Run concurrency tests locally
+	$(DOCKER_COMPOSE) exec app sh -c "cd /LeakyBucket && uv run --python /LeakyBucket/app/.venv/bin/python pytest tests/concurrency/ -v --tb=short"
+
 test-with-docker: ## Run all tests in isolated Docker container
-	$(DOCKER_COMPOSE_TEST) run --rm test-runner
+	RUN_TESTS=true $(DOCKER_COMPOSE_TEST) run --rm test-runner
 
 test-with-docker-unit: ## Run unit tests in isolated Docker container
-	TEST_TYPE=unit $(DOCKER_COMPOSE_TEST) run --rm test-runner
+	RUN_TESTS=true TEST_TYPE=unit $(DOCKER_COMPOSE_TEST) run --rm test-runner
 
 test-with-docker-integration: ## Run integration tests in isolated Docker container
-	TEST_TYPE=integration $(DOCKER_COMPOSE_TEST) run --rm test-runner
+	RUN_TESTS=true TEST_TYPE=integration $(DOCKER_COMPOSE_TEST) run --rm test-runner
 
 test-with-docker-security: ## Run security tests in isolated Docker container
-	TEST_TYPE=security $(DOCKER_COMPOSE_TEST) run --rm test-runner
+	RUN_TESTS=true TEST_TYPE=security $(DOCKER_COMPOSE_TEST) run --rm test-runner
+
+test-with-docker-concurrency: ## Run concurrency tests in isolated Docker container
+	RUN_TESTS=true TEST_TYPE=concurrency $(DOCKER_COMPOSE_TEST) run --rm test-runner
 
 status: ## Show container status
 	$(DOCKER_COMPOSE) ps

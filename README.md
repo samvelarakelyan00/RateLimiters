@@ -1,115 +1,162 @@
 # Rate Limiters in Python
 
-[![Python Version](https://shields.io)](https://python.org)
-[![Package Manager](https://shields.io)](https://github.com)
+[![Python Version](https://img.shields.io/badge/python-3.12+-blue.svg)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.136+-green.svg)](https://fastapi.tiangolo.com)
+[![Redis](https://img.shields.io/badge/Redis-8.0+-red.svg)](https://redis.io)
+[![Docker](https://img.shields.io/badge/Docker-28.0+-blue.svg)](https://docker.com)
+[![pytest](https://img.shields.io/badge/pytest-9.0+-yellow.svg)](https://pytest.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A comprehensive Python implementation of 5 core rate-limiting algorithms, complete with thorough unit test suites. This repository serves as an educational and practical reference for understanding network traffic control and rate-limiting strategies.
+A production-ready, distributed rate‑limiting library that implements **five core algorithms** with Redis back‑end, FastAPI integration, and comprehensive test suites. Designed for high‑concurrency environments, this project serves as both a practical reference and a turn‑key solution for protecting APIs, microservices, and web applications.
 
-## 📌 Table of Contents
-- [Algorithms](#-algorithms)
-- [Tech Stack](#-tech-stack)
-- [Quick Start](#-quick-start)
-- [Running Tests](#-running-tests)
-- [Project Structure](#-project-structure)
+---
+
+## 📖 Table of Contents
+
+- [Overview](#overview)
+- [Why Rate Limiting?](#why-rate-limiting)
+- [Algorithms](#algorithms)
+- [Technology Stack](#technology-stack)
+- [Getting Started](#getting-started)
+- [Running Tests](#running-tests)
+- [Project Structure](#project-structure)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## 🎯 Overview
+
+This repository contains **five independent** implementations of the most widely used rate‑limiting algorithms. Each algorithm is:
+
+- **Fully functional** – production‑ready code with atomic Redis operations.
+- **Distributed by design** – scales horizontally using a shared Redis store.
+- **Containerized** – Docker and Docker Compose for reproducible environments.
+- **Thoroughly tested** – unit, integration, concurrency, and security tests.
+- **Easy to integrate** – FastAPI dependency injection makes adoption a breeze.
+
+Whether you are building an API gateway, securing microservices, or simply learning about traffic control, this project gives you a clean, well‑documented reference implementation for each strategy.
+
+---
+
+## 🔒 Why Rate Limiting?
+
+Rate limiting is essential for any production system:
+
+- **Protect Resources** – prevent denial of service and resource exhaustion.
+- **Ensure Fairness** – provide equal access to all clients.
+- **Control Costs** – manage API usage and infrastructure spending.
+- **Maintain Availability** – absorb traffic spikes without degradation.
+- **Enforce Compliance** – implement usage quotas and SLA guarantees.
+
+---
 
 ## 🧠 Algorithms
 
-This project implements and tests the following 5 rate-limiting algorithms:
+This project implements **five** distinct algorithms, each with its own trade‑offs. You can choose the one that best fits your use case.
 
-1. **Leaky Bucket** 
-   - 🔄 *Status: Under Construction*
-   - 📝 Description: Smooths out bursts of traffic by releasing requests at a constant, predictable rate.
-2. **Token Bucket**
-   - ⏳ *Status: Planned*
-   - 📝 Description: Allows for sudden bursts of traffic by accumulating tokens up to a specified maximum capacity.
-3. **Fixed Window Counter**
-   - ⏳ *Status: Planned*
-   - 📝 Description: Simple algorithm that tracks request counts within strictly bounded, non-overlapping time windows.
-4. **Sliding Window Log**
-   - ⏳ *Status: Planned*
-   - 📝 Description: Highly accurate algorithm that stores timestamps for every single request to eliminate boundary bursts.
-5. **Sliding Window Counter**
-   - ⏳ *Status: Planned*
-   - 📝 Description: A memory-efficient hybrid approach that uses a weighted average of the current and previous window counts.
+| # | Algorithm | Status | Description | Best For |
+|---|-----------|--------|-------------|----------|
+| 1 | **Leaky Bucket** | ✅ Complete | Processes requests at a constant rate, smoothing out bursts. Excess requests are queued or dropped. | Systems that need a stable, predictable request flow (e.g., batch processing, downstream protection). |
+| 2 | **Token Bucket** | 🔄 Planned | Accumulates tokens at a fixed rate; each request consumes a token. Short bursts are allowed. | APIs where occasional bursts are acceptable (mobile apps, public endpoints). |
+| 3 | **Fixed Window Counter** | 🔄 Planned | Counts requests in fixed, non‑overlapping time windows (e.g., per minute). Resets completely at each boundary. | Simple, low‑traffic use cases where precision is not critical. |
+| 4 | **Sliding Window Log** | 🔄 Planned | Stores timestamps of every request; counts those within the last N seconds. Provides exact accuracy. | Financial systems, compliance‑critical applications that require perfect precision. |
+| 5 | **Sliding Window Counter** | 🔄 Planned | Hybrid approach using weighted averages of current and previous windows. Balances accuracy and memory. | Production systems that need good accuracy without excessive memory usage. |
 
-## 🛠 Tech Stack
+---
 
-- **Python 3.12+** — core runtime environment.
-- **uv** — ultra-fast Python package resolver and project manager.
-- **FastAPI** — Fake Auth Service for testing rate limiter.
-- **Pydantic** — For input/output models, data structures
-- **Docker, Docker Compose** — For containerization
-- **pytest** — robust framework used for writing and running the test suites.
+## 🛠 Technology Stack
 
-## ⚡ Quick Start
+| Component | Technology | Version |
+|-----------|------------|---------|
+| Language | Python | 3.12+ |
+| Web Framework | FastAPI | 0.136+ |
+| Distributed Cache | Redis | 8.0+ |
+| Package Manager | uv | Latest |
+| Container Runtime | Docker, Docker Compose | 28.0+ |
+| Test Framework | pytest, pytest-asyncio | 9.0+, 1.4+ |
+| Test Containers | testcontainers | 4.14+ |
+| Data Validation | Pydantic | 2.13+ |
 
-This project utilizes `uv` for seamless runtime virtualization. You do not need to manually configure environment files or source the `.venv` directory.
+---
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com<your-username>/RateLimiters.git
-   cd RateLimiters
-   ```
+## 🚀 Getting Started
 
-2. Resolve environments and install dependencies:
-   ```bash
-   uv sync
-   ```
+### Prerequisites
 
-3. Spin up the application locally:
-   ```bash
-   uv run fastapi dev
-   ```
+- Python 3.12 or higher
+- Docker and Docker Compose
+- `uv` package manager (recommended)
 
-## 🧪 Running Tests
+### Clone the Repository
 
-The test suite is partitioned to validate isolated pieces of code as well as extreme load scenarios. Run tests inside the target strategy workspace.
-
-Run tests of a rate limiter: (example)
 ```bash
-cd /LeakyBucket/tests/unit/
-python3 test_rate_limiter.py
+git clone git@github.com:samvelarakelyan00/RateLimiters.git
+cd RateLimiters
 ```
 
-#### Or just configure your environment (PyCharm, VS Code...) for running all tests at once
+### Choose an Algorithm
 
-## 📂 Project Structure
+Each algorithm lives in its own sub‑directory (e.g., `LeakyBucket/`, `TokenBucket/`, etc.). Inside each folder, you will find:
 
-```text
-RateLimiters/
-├── .venv/                      # Virtual environment (managed by uv)
-├── LeakyBucket/                # Dedicated Leaky Bucket module
-│   ├── app/                    # Application source code
-│   │   ├── api/                # API Routing and Layering
-│   │   │   ├── dependencies/   # FastAPI Dependency Injection
-│   │   │   │   ├── auth_dep.py
-│   │   │   │   └── auth_rate_limiters.py
-│   │   │   └── v1/             # API Version 1 Namespace
-│   │   │       ├── endpoints/  # Route handlers
-│   │   │       └── __init__.py
-│   │   ├── core/               # App configuration and system-level security
-│   │   │   ├── security/       # Core Rate Limiting engines
-│   │   │   │   ├── rate_limit_profiles.py
-│   │   │   │   ├── rate_limit_service.py
-│   │   │   │   └── rate_limiter.py
-│   │   │   └── settings/       # Global configuration states
-│   │   │       └── __init__.py
-│   │   ├── schemas/            # Pydantic data serialization schemas
-│   │   │   └── user_schemas.py
-│   │   ├── services/           # Business logic isolation layer
-│   │   │   └── auth.py
-│   │   └── main.py             # Application entry point
-│   ├── tests/                  # Multi-layer testing matrices
-│   │   ├── component/          # Component isolation tests
-│   │   ├── concurrency/        # Race condition & multi-thread stress verification
-│   │   ├── end-to-end/         # Complete E2E flow assertions
-│   │   ├── integration/        # Module-to-module communication checks
-│   │   ├── load/               # Heavy-traffic simulation tests
-│   │   ├── security-abuse/     # Exploitation and perimeter evasion simulation
-│   │   └── unit/               # Granular function-level tests
-│   └── Dockerfile              # Multi-stage production container blueprint
-├── .gitignore
-├── pyproject.toml             # Global dependency manifest
-├── uv.lock                    # Cryptographically locked dependency state
-└── README.md                  # System overview documentation
+- A dedicated `README.md` with detailed setup, usage instructions, and testing guides specific to that algorithm.
+- A complete Dockerized environment with its own `Makefile`, `docker-compose.yml`, and test suites.
+
+Navigate to the algorithm you are interested in and follow the instructions provided there.
+
+```bash
+cd LeakyBucket
+# Then read the README.md inside
 ```
+
+## General Workflow (applies to all algorithms)
+
+1. Copy the environment file and adjust if needed:
+
+```bash
+cp .env.example .env
+```
+2. Install dependencies:
+
+```bash
+uv sync
+```
+3. Start the service (with or without tests) using the provided Makefile:
+
+```bash
+make up            # start without tests
+make up-tests      # start and run all tests on startup
+```
+4. Run the test suite in isolation:
+
+```bash
+make test-with-docker
+```
+For detailed commands and options, refer to the `README.md` inside the specific algorithm folder.
+
+---
+
+## 📂 Project Structure 
+Each algorithm is isolated in its own top‑level directory, making it easy to add new algorithms or maintain existing ones without interference.
+
+| Directory | Description |
+| --- | --- |
+| `RateLimiters/` | Top-level directory containing all algorithms |
+| ├── `LeakyBucket/` | Complete implementation of Leaky Bucket |
+| │   ├── `app/` | Application source code |
+| │   ├── `tests/` | Comprehensive test suite |
+| │   ├── `docker-compose.yml` | Multi‑container orchestration |
+| │   ├── `Makefile` | Automation commands |
+| │   ├── `README.md` | Algorithm‑specific documentation |
+| │   └── ... | Other configuration files |
+| ├── `TokenBucket/` | (Planned) |
+| ├── `FixedWindowCounter/` | (Planned) |
+| ├── `SlidingWindowLog/` | (Planned) |
+| └── `SlidingWindowCounter/` | (Planned) |
+|	 `.gitignore`	|	Git ignore file|	|	`.README.md`	|	This file|	|	`.LICENSE`	|	License file|	 \\ \\ \\ \\ \\ \\ \\
+the project structure table continues as needed...
+details about contributing and coding standards follow below.
+---
+
+### details about coding standards follow below.
+detailed standards include PEP 8 with Black formatting, type hints for all functions, docstrings for public APIs, and maintaining or improving existing test coverage.

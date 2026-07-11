@@ -77,7 +77,7 @@ def test_raise_ip_limit_raises_http_exception() -> None:
         RateLimitService.raise_ip_limit_exceeded()
 
     assert exc.value.status_code == 429
-    assert exc.value.detail == "Leaky Bucket -> Your IP limit exceeded; please try again later!"
+    assert exc.value.detail == "Token Bucket -> Your IP limit exceeded; please try again later!"
 
 
 def test_raise_email_limit_raises_http_exception() -> None:
@@ -85,4 +85,4 @@ def test_raise_email_limit_raises_http_exception() -> None:
         RateLimitService.raise_email_limit_exceeded()
 
     assert exc.value.status_code == 429
-    assert exc.value.detail == "Leaky Bucket -> Your email limit exceeded; please try again later!"
+    assert exc.value.detail == "Token Bucket -> Your email limit exceeded; please try again later!"

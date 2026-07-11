@@ -6,3 +6,6 @@ services:
     env_file: .env
     volumes:
       - ${HOME}/.aws:/root/.aws:ro
+
+  test-runner:
+    env_file: .env

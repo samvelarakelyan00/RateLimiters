@@ -1,0 +1,106 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - ENV_STATE=${ENV_STATE}
+    container_name: fixed_window_counter_bucket_container
+    ports:
+      - "8000:8000"
+    volumes:
+      - fixed_window_counter_rate_limiter_logs:/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - ENV_STATE=${ENV_STATE}
+      - DEBUG=${DEBUG}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_DB=${REDIS_DB}
+      - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - LOG_JSON_FORMAT=${LOG_JSON_FORMAT}
+      - LOG_MAX_BYTES=${LOG_MAX_BYTES}
+      - LOG_BACKUP_COUNT=${LOG_BACKUP_COUNT}
+      - LOG_DIR=${LOG_DIR}
+      - RUN_TESTS=${RUN_TESTS:-false}
+      - TEST_TYPE=${TEST_TYPE:-all}
+      - FAIL_ON_TEST_FAILURE=${FAIL_ON_TEST_FAILURE:-false}
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - PYTHONPATH=/FixedWindowCounter:/FixedWindowCounter/app
+    depends_on:
+      redis:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: test_runner
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - TEST_TYPE=${TEST_TYPE:-all}
+      - RUN_TESTS=true
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - PYTHONPATH=/FixedWindowCounter:/FixedWindowCounter/app
+    depends_on:
+      redis:
+        condition: service_healthy
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    entrypoint: /bin/sh
+    command: >
+      -c "
+        cd /FixedWindowCounter &&
+        echo 'Waiting for Redis...' &&
+        while ! nc -z redis 6379; do sleep 1; done &&
+        echo 'Redis is ready!' &&
+        echo 'Running tests...' &&
+        if [ \"$TEST_TYPE\" = 'unit' ]; then
+          uv run pytest tests/unit/ -v --tb=short
+        elif [ \"$TEST_TYPE\" = 'integration' ]; then
+          uv run pytest tests/integration/ -v --tb=short
+        elif [ \"$TEST_TYPE\" = 'security' ]; then
+          uv run pytest tests/security-abuse/ -v --tb=short
+        elif [ \"$TEST_TYPE\" = 'concurrency' ]; then
+          uv run pytest tests/concurrency/ -v --tb=short
+        else
+          uv run pytest tests/ -v --tb=short
+        fi
+      "
+    profiles:
+      - tests
+
+  redis:
+    image: redis:8-alpine
+    container_name: rate-limit-redis
+    ports:
+      - ${REDIS_PORT}:${REDIS_PORT}
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+volumes:
+  redis_data:
+  fixed_window_counter_rate_limiter_logs:

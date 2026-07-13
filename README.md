@@ -59,7 +59,7 @@ This project implements **five** distinct algorithms, each with its own trade‑
 |---|-----------|--------|-------------|----------|
 | 1 | **Leaky Bucket** | ✅ Complete | Processes requests at a constant rate, smoothing out bursts. Excess requests are queued or dropped. | Systems that need a stable, predictable request flow (e.g., batch processing, downstream protection). |
 | 2 | **Token Bucket** | ✅ Complete | Accumulates tokens at a fixed rate; each request consumes a token. Short bursts are allowed. | APIs where occasional bursts are acceptable (mobile apps, public endpoints). |
-| 3 | **Fixed Window Counter** | 🔄 Planned | Counts requests in fixed, non‑overlapping time windows (e.g., per minute). Resets completely at each boundary. | Simple, low‑traffic use cases where precision is not critical. |
+| 3 | **Fixed Window Counter** | ✅ Complete | Counts requests in fixed, non‑overlapping time windows (e.g., per minute). Resets completely at each boundary. | Simple, low‑traffic use cases where precision is not critical. |
 | 4 | **Sliding Window Log** | 🔄 Planned | Stores timestamps of every request; counts those within the last N seconds. Provides exact accuracy. | Financial systems, compliance‑critical applications that require perfect precision. |
 | 5 | **Sliding Window Counter** | 🔄 Planned | Hybrid approach using weighted averages of current and previous windows. Balances accuracy and memory. | Production systems that need good accuracy without excessive memory usage. |
 

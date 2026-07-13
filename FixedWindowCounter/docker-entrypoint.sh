@@ -23,18 +23,15 @@ if [ "$RUN_TESTS" = "true" ]; then
     TOTAL_XFAILED=0
     TOTAL_ERRORS=0
 
-    # Function to parse pytest output and extract results (BusyBox compatible)
+    # Function to parse pytest output and extract results
     parse_test_results() {
         local output="$1"
 
-        # Extract numbers using grep with basic regex (no -P)
-        # BusyBox grep uses -E for extended regex, but we'll use basic regex
         local passed=$(echo "$output" | grep -oE '[0-9]+ passed' | tail -1 | grep -oE '[0-9]+')
         local failed=$(echo "$output" | grep -oE '[0-9]+ failed' | tail -1 | grep -oE '[0-9]+')
         local xfailed=$(echo "$output" | grep -oE '[0-9]+ xfailed' | tail -1 | grep -oE '[0-9]+')
         local errors=$(echo "$output" | grep -oE '[0-9]+ errors' | tail -1 | grep -oE '[0-9]+')
 
-        # Default to 0 if not found
         passed=${passed:-0}
         failed=${failed:-0}
         xfailed=${xfailed:-0}
@@ -45,63 +42,49 @@ if [ "$RUN_TESTS" = "true" ]; then
         TOTAL_XFAILED=$((TOTAL_XFAILED + xfailed))
         TOTAL_ERRORS=$((TOTAL_ERRORS + errors))
 
-        # Count total tests in this group
         local group_total=$((passed + failed + xfailed + errors))
         TOTAL_TESTS=$((TOTAL_TESTS + group_total))
     }
 
+    # Run pytest with real-time output (no capture)
+    run_pytest() {
+        local test_path="$1"
+        local test_name="$2"
+
+        echo ""
+        echo "=== $test_name ==="
+
+        # Run pytest directly without capturing output
+        uv run pytest "$test_path" -v --tb=short --color=yes
+
+        # Capture the exit code
+        local exit_code=$?
+
+        # Run again with capture to parse results
+        local output=$(uv run pytest "$test_path" -v --tb=short 2>&1 || true)
+        parse_test_results "$output"
+
+        return $exit_code
+    }
+
     case "$TEST_TYPE" in
         "unit")
-            echo "=== UNIT TESTS ==="
-            output=$(uv run pytest ../tests/unit/ -v --tb=short 2>&1 || true)
-            echo "$output"
-            parse_test_results "$output"
+            run_pytest "../tests/unit/" "UNIT TESTS"
             ;;
         "integration")
-            echo "=== INTEGRATION TESTS ==="
-            output=$(uv run pytest ../tests/integration/ -v --tb=short 2>&1 || true)
-            echo "$output"
-            parse_test_results "$output"
+            run_pytest "../tests/integration/" "INTEGRATION TESTS"
             ;;
         "security")
-            echo "=== SECURITY TESTS ==="
-            output=$(uv run pytest ../tests/security-abuse/ -v --tb=short 2>&1 || true)
-            echo "$output"
-            parse_test_results "$output"
+            run_pytest "../tests/security-abuse/" "SECURITY TESTS"
             ;;
         "concurrency")
-            echo "=== CONCURRENCY TESTS ==="
-            output=$(uv run pytest ../tests/concurrency/ -v --tb=short 2>&1 || true)
-            echo "$output"
-            parse_test_results "$output"
+            run_pytest "../tests/concurrency/" "CONCURRENCY TESTS"
             ;;
         "all")
-            echo "Running all tests in isolated groups..."
-
-            # Run each test group separately
-            echo ""
-            echo "=== UNIT TESTS ==="
-            output=$(uv run pytest ../tests/unit/ -v --tb=short 2>&1 || true)
-            echo "$output"
-            parse_test_results "$output"
-
-            echo ""
-            echo "=== INTEGRATION TESTS ==="
-            output=$(uv run pytest ../tests/integration/ -v --tb=short 2>&1 || true)
-            echo "$output"
-            parse_test_results "$output"
-
-            echo ""
-            echo "=== SECURITY TESTS ==="
-            output=$(uv run pytest ../tests/security-abuse/ -v --tb=short 2>&1 || true)
-            echo "$output"
-            parse_test_results "$output"
-
-            echo ""
-            echo "=== CONCURRENCY TESTS ==="
-            output=$(uv run pytest ../tests/concurrency/ -v --tb=short 2>&1 || true)
-            echo "$output"
-            parse_test_results "$output"
+            run_pytest "../tests/unit/" "UNIT TESTS"
+            run_pytest "../tests/integration/" "INTEGRATION TESTS"
+            run_pytest "../tests/security-abuse/" "SECURITY TESTS"
+            run_pytest "../tests/concurrency/" "CONCURRENCY TESTS"
             ;;
         *)
             echo "Unknown TEST_TYPE: $TEST_TYPE"

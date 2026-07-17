@@ -442,15 +442,15 @@ Testing
 ┌─────────────────────┬──────────────────────────────────────┬─────────────────┐
 │ Category            │ Description                          │ Test Count      │
 ├─────────────────────┼──────────────────────────────────────┼─────────────────┤
-│ Unit                │ Granular function-level tests        │ 29              │
+│ Unit                │ Granular function-level tests        │ 43              │
 ├─────────────────────┼──────────────────────────────────────┼─────────────────┤
-│ Integration         │ Full stack with Redis and API        │ 34              │
+│ Integration         │ Full stack with Redis and API        │ 36              │
 ├─────────────────────┼──────────────────────────────────────┼─────────────────┤
-│ Security            │ Abuse prevention and attack sim      │ 11              │
+│ Security            │ Abuse prevention and attack sim      │ 13              │
 ├─────────────────────┼──────────────────────────────────────┼─────────────────┤
-│ Concurrency         │ Race condition and stress tests      │ 14              │
+│ Concurrency         │ Race condition and stress tests      │ 16              │
 ├─────────────────────┼──────────────────────────────────────┼─────────────────┤
-│ TOTAL               │                                      │ 88              │
+│ TOTAL               │                                      │ 108             │
 └─────────────────────┴──────────────────────────────────────┴─────────────────┘
 ```
 
@@ -489,14 +489,29 @@ The test runner provides real-time output showing each test as it runs:
 
 ```
 === UNIT TESTS ===
-============================= test session starts ==============================
-collected 29 items
-
-../tests/unit/test_rate_limit_service.py::test_normalize_email_lowercases PASSED [ 3%]
-../tests/unit/test_rate_limit_service.py::test_normalize_email_strips_whitespace PASSED [ 6%]
 ...
-
-============================== 29 passed in 5.40s ==============================
+sliding_window_log_bucket_container  | collecting ... collected 43 items
+sliding_window_log_bucket_container  | 
+sliding_window_log_bucket_container  | ../tests/unit/test_rate_limit_service.py::test_normalize_email_lowercases PASSED [  2%]
+sliding_window_log_bucket_container  | ../tests/unit/test_rate_limit_service.py::test_normalize_email_strips_whitespace PASSED [  4%]
+sliding_window_log_bucket_container  | ../tests/unit/test_rate_limit_service.py::test_normalize_email_strips_and_lowercases PASSED [  6%]
+...
+sliding_window_log_bucket_container  | ../tests/unit/test_rate_limiter.py::test_get_newest_timestamp_returns_zero_for_empty PASSED [ 97%]
+sliding_window_log_bucket_container  | ../tests/unit/test_rate_limiter.py::test_get_newest_timestamp_returns_correct_value PASSED [100%]
+sliding_window_log_bucket_container  | 
+sliding_window_log_bucket_container  | ============================== 43 passed in 6.33s ==============================
+sliding_window_log_bucket_container  | 
+sliding_window_log_bucket_container  | ========================================
+sliding_window_log_bucket_container  |           TEST SUMMARY
+sliding_window_log_bucket_container  | ========================================
+sliding_window_log_bucket_container  | Total Tests:  43
+sliding_window_log_bucket_container  | Passed:       43
+sliding_window_log_bucket_container  | Failed:       0
+sliding_window_log_bucket_container  | XFailed:      0
+sliding_window_log_bucket_container  | Errors:       0
+sliding_window_log_bucket_container  | ----------------------------------------
+sliding_window_log_bucket_container  | ✅ ALL TESTS PASSED!
+sliding_window_log_bucket_container  | ========================================
 ```
 
 API Endpoints

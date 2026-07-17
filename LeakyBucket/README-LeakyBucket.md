@@ -1,4 +1,4 @@
-Token Bucket Rate Limiter
+Leaky Bucket Rate Limiter
 =================================
 
 Documentation
@@ -38,11 +38,11 @@ Documentation
 Overview
 --------
 
-The Token Bucket is a production-grade, distributed rate-limiting implementation designed for high-concurrency environments. It is one of five rate-limiting algorithms in the RateLimiters project, offering predictable request throttling with minimal memory overhead.
+The Leaky Bucket is a production-grade, distributed rate-limiting implementation designed for high-concurrency environments. It is one of five rate-limiting algorithms in the RateLimiters project, offering smooth traffic shaping with predictable request processing.
 
 ### Key Characteristics
 
-*   **Burst Capable**: Allows short bursts of traffic by accumulating tokens
+*   **Smooth Traffic Shaping**: Processes requests at a constant, predictable rate
 
 *   **Distributed by Design**: Works across multiple service instances sharing a Redis backend
 
@@ -57,13 +57,13 @@ The Token Bucket is a production-grade, distributed rate-limiting implementation
 
 ### Use Cases
 
-*   API rate limiting with burst support
+*   API rate limiting with consistent request flow
 
-*   Mobile application rate limiting
+*   Batch processing throttling
 
-*   Service-to-service communication throttling
+*   Downstream service protection
 
-*   Event processing rate control
+*   Queue management and load smoothing
 
 *   Cost control for paid APIs
 
@@ -75,23 +75,23 @@ Architecture
 
 ### High-Level Design
 
-The Token Bucket follows a clean, layered architecture that separates concerns and promotes maintainability:
+The Leaky Bucket follows a clean, layered architecture that separates concerns and promotes maintainability:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        FastAPI Application                         │
+│                        FastAPI Application                          │
 ├─────────────────────────────────────────────────────────────────────┤
-│                        API Layer (v1 Router)                       │
+│                        API Layer (v1 Router)                        │
 ├─────────────────────────────────────────────────────────────────────┤
-│                     Rate Limit Guard (Middleware)                  │
+│                     Rate Limit Guard (Middleware)                   │
 │                                                                     │
-│  ┌─────────────────────┐  ┌─────────────────────┐                  │
-│  │   IP-based Limiter  │  │  Email-based Limiter│                  │
-│  └─────────────────────┘  └─────────────────────┘                  │
+│  ┌─────────────────────┐  ┌─────────────────────┐                   │
+│  │   IP-based Limiter  │  │  Email-based Limiter│                   │
+│  └─────────────────────┘  └─────────────────────┘                   │
 ├─────────────────────────────────────────────────────────────────────┤
-│                    Rate Limit Service (Core Logic)                 │
+│                    Rate Limit Service (Core Logic)                  │
 ├─────────────────────────────────────────────────────────────────────┤
-│                Token Bucket Engine (Redis + Lua)           │
+│                    Leaky Bucket Engine (Redis + Lua)                │
 ├─────────────────────────────────────────────────────────────────────┤
 │                    Redis Connection Manager                         │
 ├─────────────────────────────────────────────────────────────────────┤
@@ -101,7 +101,7 @@ The Token Bucket follows a clean, layered architecture that separates concerns a
 
 ### Component Breakdown
 
-#### 1. TokenBucket (Core Engine)
+#### 1. LeakyBucket (Core Engine)
 
 The heart of the rate limiter, implementing the algorithm with:
 
@@ -169,7 +169,7 @@ Manages the Redis connection pool:
 File Structure
 --------------
 
-```TokenBucket/
+```LeakyBucket/
 ├── app/
 │   ├── api/
 │   │   ├── dependencies/
@@ -186,7 +186,7 @@ File Structure
 │   │   │       ├── rate_limit_guard.py   # FastAPI dependency guard
 │   │   │       ├── rate_limit_profiles.py # Pre-configured limiters
 │   │   │       ├── rate_limit_service.py # IP extraction, key building, exceptions
-│   │   │       ├── rate_limiter.py       # Core TokenBucket implementation
+│   │   │       ├── rate_limiter.py       # Core LeakyBucket implementation
 │   │   │       └── redis_manager.py      # Redis connection management
 │   │   └── settings/                     # Application configuration
 │   │       ├── __init__.py
@@ -228,56 +228,55 @@ File Structure
 Algorithm Explanation
 ---------------------
 
-### How Token Bucket Works
+### How Leaky Bucket Works
 
-The Token Bucket algorithm maintains a bucket with a fixed capacity of tokens. Tokens are added to the bucket at a fixed rate (refill_rate). Each request consumes one token (or more). If the bucket has enough tokens, the request is allowed; otherwise, it is denied.
+The Leaky Bucket algorithm works like a bucket with a hole at the bottom. Water (requests) is added to the bucket at varying rates, but it leaks out at a constant rate. If the bucket overflows, excess requests are denied.
 
 ```
 Time: 0s                5s                10s               15s
       |                  |                 |                 |
-      |---- Token ----   |---- Token ----  |---- Token ---- |
+      |---- Water ----   |---- Water ----  |---- Water ---- |
       |   Bucket: 3/5    |   Bucket: 2/5   |   Bucket: 1/5   |
       |                  |                 |                 |
       v                  v                 v                 v
-    Request 1         Refill +1        Refill +1        Refill +1
-    Consume 1         Request 4        Request 5        Request 6
-    (4 remaining)     Consume 1        Consume 1        Consume 1
-                      (3 remaining)    (2 remaining)    (1 remaining)
+    Request 1         Leak 1 unit       Leak 1 unit       Leak 1 unit
+    Add 1 water       Request 4         Request 5         Request 6
+    (4 remaining)     Add 1 water       Add 1 water       Add 1 water
+                      (3 remaining)     (2 remaining)     (1 remaining)
 ```
 
-### Token Calculation
-
-```
-window_key = search_key + ":" + floor(current_timestamp / window_size)
-```
+### Water Level Calculation
 
 ```
 elapsed = now - last_update
-refilled = elapsed * refill_rate
-tokens = min(capacity, tokens + refilled)
+leaked = elapsed * leak_rate
+water_level = max(0.0, water_level - leaked)
 ```
 
-### Token Key Storage
+### Bucket State Storage
 
 The bucket state is stored as a Redis String in the format:
 
 ```
-"tokens:last_update"
+"water_level:last_update"
 ```
+
+Example: "3:1700000000" means 3 units of water at timestamp 1700000000.
+
 
 ### Lua Script Execution Flow
 
-1. **Receive Parameters**: key, capacity, refill_rate, current_time, requested_tokens
+1. **Receive Parameters**: key, capacity, leak_rate, current_time, requested_water
 
-2. **Get Current State**: GET key (returns "tokens:last_update")
+2. **Get Current State**: GET key (returns "water_level:last_update")
 
-3. **Calculate Refill**: elapsed * refill_rate, then min(capacity, tokens + refilled)
+3. **Calculate Leak**: elapsed * leak_rate, then max(0.0, water_level - leaked)
 
-4. **Check Availability**: If tokens >= requested
+4. **Check Capacity**: If water_level + requested <= capacity
 
-5. **Allow**: tokens = tokens - requested, SET key "tokens:now" EX 3600, return 1
+5. **Allow**: water_level = water_level + requested, SET key "water_level:now" EX 3600, return 1
 
-6. **Deny**: SET key "tokens:now" EX 3600, return 0
+6. **Deny**: SET key "water_level:now" EX 3600, return 0
     
 
 ### Atomicity Guarantee
@@ -315,30 +314,30 @@ Configuration
 ### Rate Limit Profiles
 
 ```
-# DEFAULT: 60 tokens, refill rate 1 token/second
-DEFAULT_IP_LIMITER = TokenBucket(capacity=60.0, refill_rate=1.0)
-DEFAULT_ACCOUNT_LIMITER = TokenBucket(capacity=60.0, refill_rate=1.0)
+# DEFAULT: 60 capacity, leak rate 1 water unit/second
+DEFAULT_IP_LIMITER = LeakyBucket(capacity=60.0, leak_rate=1.0)
+DEFAULT_ACCOUNT_LIMITER = LeakyBucket(capacity=60.0, leak_rate=1.0)
 
-# SIGNUP: 5 IP / 2 email tokens with slower refill
-SIGNUP_IP_LIMITER = TokenBucket(capacity=5.0, refill_rate=0.2)
-SIGNUP_EMAIL_LIMITER = TokenBucket(capacity=2.0, refill_rate=0.1)
+# SIGNUP: 5 IP / 2 email capacity with slower leak
+SIGNUP_IP_LIMITER = LeakyBucket(capacity=5.0, leak_rate=0.2)
+SIGNUP_EMAIL_LIMITER = LeakyBucket(capacity=2.0, leak_rate=0.1)
 
-# LOGIN: 3 tokens with moderate refill
-LOGIN_IP_LIMITER = TokenBucket(capacity=3.0, refill_rate=0.5)
-LOGIN_EMAIL_LIMITER = TokenBucket(capacity=3.0, refill_rate=0.2)
+# LOGIN: 3 capacity with moderate leak
+LOGIN_IP_LIMITER = LeakyBucket(capacity=3.0, leak_rate=0.5)
+LOGIN_EMAIL_LIMITER = LeakyBucket(capacity=3.0, leak_rate=0.2)
 ```
 
 ### Custom Configuration Examples
 
 ```
-# 100 tokens, refill 2 per second (allows bursts)
-api_limiter = TokenBucket(capacity=100.0, refill_rate=2.0)
+# 100 capacity, leak 2 per second (high throughput)
+api_limiter = LeakyBucket(capacity=100.0, leak_rate=2.0)
 
-# 10 tokens, refill 1 per minute (very restrictive)
-rate_limiter = TokenBucket(capacity=10.0, refill_rate=0.0167)
+# 10 capacity, leak 0.1 per second (very restrictive)
+rate_limiter = LeakyBucket(capacity=10.0, leak_rate=0.1)
 
-# 50 tokens, refill 5 per second (high throughput)
-burst_limiter = TokenBucket(capacity=50.0, refill_rate=5.0)
+# 50 capacity, leak 5 per second (fast processing)
+burst_limiter = LeakyBucket(capacity=50.0, leak_rate=5.0)
 ```
 
 Installation & Setup
@@ -357,7 +356,7 @@ Installation & Setup
 
 ```
 git clone git@github.com:samvelarakelyan00/RateLimiters.git
-cd RateLimiters/TokenBucket
+cd RateLimiters/LeakyBucket
 cp .env.example .env
 ```
 
@@ -411,17 +410,17 @@ make up-concurrency   # Concurrency tests only
 
 ### Access the Service
 
-*   API: http://localhost:8000/api/v1/auth
+*   API: http://localhost:8000/api/v1/auth
     
-*   Root: http://localhost:8000/
+*   Root: http://localhost:8000/
     
-*   Health Check: http://localhost:8000/health
+*   Health Check: http://localhost:8000/health
     
-*   Rate Limit Info: http://localhost:8000/rate-limit-info
+*   Rate Limit Info: http://localhost:8000/rate-limit-info
     
-*   API Documentation: http://localhost:8000/api/docs
+*   API Documentation: http://localhost:8000/api/docs
     
-*   Redoc: http://localhost:8000/api/redoc
+*   Redoc: http://localhost:8000/api/redoc
     
 
 Testing
@@ -433,15 +432,15 @@ Testing
 ┌─────────────────────┬──────────────────────────────────────┬─────────────────┐
 │ Category            │ Description                          │ Test Count      │
 ├─────────────────────┼──────────────────────────────────────┼─────────────────┤
-│ Unit                │ Granular function-level tests        │ 29              │
+│ Unit                │ Granular function-level tests        │ 26              │
 ├─────────────────────┼──────────────────────────────────────┼─────────────────┤
-│ Integration         │ Full stack with Redis and API        │ 34              │
+│ Integration         │ Full stack with Redis and API        │ 29              │
 ├─────────────────────┼──────────────────────────────────────┼─────────────────┤
-│ Security            │ Abuse prevention and attack sim      │ 9               │
+│ Security            │ Abuse prevention and attack sim      │ 5               │
 ├─────────────────────┼──────────────────────────────────────┼─────────────────┤
-│ Concurrency         │ Race condition and stress tests      │ 13              │
+│ Concurrency         │ Race condition and stress tests      │ 12              │
 ├─────────────────────┼──────────────────────────────────────┼─────────────────┤
-│ TOTAL               │                                      │ 85              │
+│ TOTAL               │                                      │ 72              │
 └─────────────────────┴──────────────────────────────────────┴─────────────────┘
 ```
 
@@ -481,13 +480,13 @@ The test runner provides real-time output showing each test as it runs:
 ```
 === UNIT TESTS ===
 ============================= test session starts ==============================
-collected 29 items
+collected 26 items
 
 ../tests/unit/test_rate_limit_service.py::test_normalize_email_lowercases PASSED [ 3%]
-../tests/unit/test_rate_limit_service.py::test_normalize_email_strips_whitespace PASSED [ 6%]
+../tests/unit/test_rate_limit_service.py::test_normalize_email_strips_whitespace PASSED [ 7%]
 ...
 
-============================== 29 passed in 5.40s ==============================
+============================== 26 passed in 5.08s ==============================
 ```
 
 API Endpoints
@@ -502,7 +501,7 @@ API Endpoints
 ```
 {
   "status": "healthy",
-  "service": "TokenBucket",
+  "service": "LeakyBucket",
   "version": "0.1.0",
   "timestamp": 1700000000,
   "checks": {
@@ -519,7 +518,7 @@ API Endpoints
 
 ```
 {
-  "service": "Token Bucket Rate Limiter",
+  "service": "Leaky Bucket Rate Limiter",
   "version": "0.1.0",
   "status": "operational",
   "uptime_seconds": 3600
@@ -534,13 +533,13 @@ API Endpoints
 
 ```
 {
-  "algorithm": "Token Bucket",
-  "default_capacity": "60 tokens",
-  "default_refill_rate": "1 token per second",
+  "algorithm": "Leaky Bucket",
+  "default_capacity": "60 water units",
+  "default_leak_rate": "1 water unit per second",
   "endpoints": {
-    "login": "3 tokens, refill 0.5 per second (IP and Email)",
-    "signup": "5 IP / 2 Email tokens, refill 0.2/0.1 per second",
-    "default": "60 tokens, refill 1 per second"
+    "login": "3 capacity, leak 0.5 per second (IP and Email)",
+    "signup": "5 IP / 2 Email capacity, leak 0.2/0.1 per second",
+    "default": "60 capacity, leak 1 per second"
   }
 }
 ```
@@ -582,7 +581,7 @@ When rate limit is exceeded:
 
 ```
 {
-  "detail": "Token Bucket -> Your IP limit exceeded; please try again later!"
+  "detail": "Leaky Bucket -> Your IP limit exceeded; please try again later!"
 }
 ```
 
@@ -592,13 +591,13 @@ Redis Integration
 ### Redis Key Structure
 
 ```
-┌──────────────────────────────────────────┬───────────────────────────────────────────────┬───────────┬──────────────────┐
-│ Key Pattern                              │ Example                                       │ Value     │ TTL              │
-├──────────────────────────────────────────┼───────────────────────────────────────────────┼───────────┼──────────────────┤
-│ rate:{endpoint}:ip:{ip}                  │ rate:login:ip:192.168.1.1                     │ 3:1700000 │ 3600 seconds     │
-├──────────────────────────────────────────┼───────────────────────────────────────────────┼───────────┼──────────────────┤
-│ rate:{endpoint}:email:{email}            │ rate:login:email:user@test.com                │ 2:1700000 │ 3600 seconds     │
-└──────────────────────────────────────────┴───────────────────────────────────────────────┴───────────┴──────────────────┘
+┌──────────────────────────────────────────┬───────────────────────────────────────────────┬───────────────────┬──────────────────┐
+│ Key Pattern                              │ Example                                       │ Value             │ TTL              │
+├──────────────────────────────────────────┼───────────────────────────────────────────────┼───────────────────┼──────────────────┤
+│ rate:{endpoint}:ip:{ip}                  │ rate:login:ip:192.168.1.1                     │ 3:1700000000      │ 3600 seconds     │
+├──────────────────────────────────────────┼───────────────────────────────────────────────┼───────────────────┼──────────────────┤
+│ rate:{endpoint}:email:{email}            │ rate:login:email:user@test.com                │ 2:1700000000      │ 3600 seconds     │
+└──────────────────────────────────────────┴───────────────────────────────────────────────┴───────────────────┴──────────────────┘
 ```
 
 ### Connection Pool Configuration
@@ -658,11 +657,11 @@ Performance Considerations
     
 3. 
 ```
-# High burst tolerance
-TokenBucket(capacity=100.0, refill_rate=10.0)
+# High throughput
+LeakyBucket(capacity=100.0, leak_rate=10.0)
 
 # Smooth, consistent rate
-TokenBucket(capacity=10.0, refill_rate=0.5)
+LeakyBucket(capacity=10.0, leak_rate=0.5)
 ```
 4. ```REDIS_DB=1```
     
@@ -746,14 +745,14 @@ Extending the Service
 Create new profiles in rate\_limit\_profiles.py:
 
 ```
-# 100 tokens, refill 2 per second for API endpoints
-API_IP_LIMITER = TokenBucket(capacity=100.0, refill_rate=2.0)
+# 100 capacity, leak 2 per second for API endpoints
+API_IP_LIMITER = LeakyBucket(capacity=100.0, leak_rate=2.0)
 
-# 10 tokens, refill 1 per minute for burst protection
-BURST_LIMITER = TokenBucket(capacity=10.0, refill_rate=0.0167)
+# 10 capacity, leak 0.1 per second for burst protection
+BURST_LIMITER = LeakyBucket(capacity=10.0, leak_rate=0.1)
 
-# 1000 tokens, refill 10 per second for premium users
-PREMIUM_LIMITER = TokenBucket(capacity=1000.0, refill_rate=10.0)
+# 1000 capacity, leak 10 per second for premium users
+PREMIUM_LIMITER = LeakyBucket(capacity=1000.0, leak_rate=10.0)
 ```
 
 ### Adding Custom Dependencies
@@ -782,17 +781,17 @@ async def protected_endpoint(
     return {"message": "Protected endpoint with rate limiting"}
 ```
 
-### Custom Token Configurations
+### Custom Leaky Bucket Configurations
 
 ```
-# 5 tokens, refill 1 per 5 seconds (rate limiting with small bursts)
-limiter = TokenBucket(capacity=5.0, refill_rate=0.2)
+# 5 capacity, leak 0.2 per second (slow leak)
+limiter = LeakyBucket(capacity=5.0, leak_rate=0.2)
 
-# 20 tokens, refill 2 per second (moderate bursts)
-limiter = TokenBucket(capacity=20.0, refill_rate=2.0)
+# 20 capacity, leak 2 per second (fast leak)
+limiter = LeakyBucket(capacity=20.0, leak_rate=2.0)
 
-# 100 tokens, refill 10 per second (high throughput)
-limiter = TokenBucket(capacity=100.0, refill_rate=10.0)
+# 100 capacity, leak 10 per second (high throughput)
+limiter = LeakyBucket(capacity=100.0, leak_rate=10.0)
 ```
 
 Monitoring & Observability
@@ -851,6 +850,6 @@ For issues, questions, or contributions:
 
 *   GitHub Issues: [https://github.com/samvelarakelyan00/RateLimiters/issues](https://github.com/your-username/RateLimiters/issues)
     
-*   Documentation: [https://github.com/samvelarakelyan00/RateLimiters/tree/main/TokenBucket](https://github.com/your-username/RateLimiters/tree/main/FixedWindowCounter)
+*   Documentation: [https://github.com/samvelarakelyan00/RateLimiters/tree/main/LeakyBucket](https://github.com/your-username/RateLimiters/tree/main/FixedWindowCounter)
 
-**Documentation Version:** 1.0.0 **Last Updated:** July 2026 **Maintained by:** Samvel Arakelyan
+**Documentation Version:** 1.0.0 **Last Updated:** July 2026 **Maintained by:** Samvel Arakelyan

@@ -1,4 +1,4 @@
-Fixed Window Counter Rate Limiter
+Token Bucket Rate Limiter
 =================================
 
 Documentation
@@ -38,35 +38,35 @@ Documentation
 Overview
 --------
 
-The Fixed Window Counter is a production-grade, distributed rate-limiting implementation designed for high-concurrency environments. It is one of five rate-limiting algorithms in the RateLimiters project, offering predictable request throttling with minimal memory overhead.
+The Token Bucket is a production-grade, distributed rate-limiting implementation designed for high-concurrency environments. It is one of five rate-limiting algorithms in the RateLimiters project, offering predictable request throttling with minimal memory overhead.
 
 ### Key Characteristics
 
-*   **Simple and Memory Efficient**: O(1) storage per key using Redis Strings
-    
-*   **Predictable Rate Limiting**: Clear window boundaries with consistent behavior
-    
+*   **Burst Capable**: Allows short bursts of traffic by accumulating tokens
+
 *   **Distributed by Design**: Works across multiple service instances sharing a Redis backend
-    
+
 *   **Atomic Operations**: Lua scripts ensure race-condition-free execution
-    
+
 *   **High Performance**: Optimized for 50,000+ concurrent requests
-    
+
 *   **FastAPI Integration**: Clean dependency injection via Depends() system
+
+*   **Memory Efficient**: O(1) storage per key using Redis Strings
     
 
 ### Use Cases
 
-*   API rate limiting for public endpoints
-    
-*   Brute force protection for authentication endpoints
-    
-*   Resource quota enforcement
-    
-*   DDoS prevention
-    
+*   API rate limiting with burst support
+
+*   Mobile application rate limiting
+
+*   Service-to-service communication throttling
+
+*   Event processing rate control
+
 *   Cost control for paid APIs
-    
+
 *   Compliance with usage SLAs
     
 
@@ -101,7 +101,7 @@ The Fixed Window Counter follows a clean, layered architecture that separates co
 
 ### Component Breakdown
 
-#### 1. FixedWindowCounter (Core Engine)
+#### 1. TokenBucket (Core Engine)
 
 The heart of the rate limiter, implementing the algorithm with:
 
@@ -169,7 +169,7 @@ Manages the Redis connection pool:
 File Structure
 --------------
 
-```FixedWindowCounter/
+```TokenBucket/
 ├── app/
 │   ├── api/
 │   │   ├── dependencies/
@@ -186,7 +186,7 @@ File Structure
 │   │   │       ├── rate_limit_guard.py   # FastAPI dependency guard
 │   │   │       ├── rate_limit_profiles.py # Pre-configured limiters
 │   │   │       ├── rate_limit_service.py # IP extraction, key building, exceptions
-│   │   │       ├── rate_limiter.py       # Core FixedWindowCounter implementation
+│   │   │       ├── rate_limiter.py       # Core TokenBucket implementation
 │   │   │       └── redis_manager.py      # Redis connection management
 │   │   └── settings/                     # Application configuration
 │   │       ├── __init__.py
@@ -228,51 +228,56 @@ File Structure
 Algorithm Explanation
 ---------------------
 
-### How Fixed Window Counter Works
+### How Token Bucket Works
 
-The Fixed Window Counter divides time into fixed-size windows (e.g., 60 seconds). Each window has a maximum number of allowed requests. When the window expires, the counter resets to zero.
+The Token Bucket algorithm maintains a bucket with a fixed capacity of tokens. Tokens are added to the bucket at a fixed rate (refill_rate). Each request consumes one token (or more). If the bucket has enough tokens, the request is allowed; otherwise, it is denied.
 
 ```
-Time: 0s                60s               120s              180s
+Time: 0s                5s                10s               15s
       |                  |                 |                 |
-      |---- Window 1 ----|---- Window 2 ---|---- Window 3 ---|
-      |   key:123:0      |   key:123:1     |   key:123:2     |
-      |   count: 3/10    |   count: 0/10   |   count: 5/10   |
+      |---- Token ----   |---- Token ----  |---- Token ---- |
+      |   Bucket: 3/5    |   Bucket: 2/5   |   Bucket: 1/5   |
       |                  |                 |                 |
       v                  v                 v                 v
-    Request 1         Window resets     Request 11       Window resets
-    Request 2         New key created   Request 12
-    Request 3                          (10 allowed)
-    (7 remaining)                      (5 remaining)
+    Request 1         Refill +1        Refill +1        Refill +1
+    Consume 1         Request 4        Request 5        Request 6
+    (4 remaining)     Consume 1        Consume 1        Consume 1
+                      (3 remaining)    (2 remaining)    (1 remaining)
 ```
 
-### Window Key Generation
+### Token Calculation
 
 ```
 window_key = search_key + ":" + floor(current_timestamp / window_size)
 ```
 
-Example with 60-second window:
+```
+elapsed = now - last_update
+refilled = elapsed * refill_rate
+tokens = min(capacity, tokens + refilled)
+```
+
+### Token Key Storage
+
+The bucket state is stored as a Redis String in the format:
 
 ```
-timestamp = 1700000000
-window_id = floor(1700000000 / 60) = 28333333
-window_key = "rate:login:ip:192.168.1.1:28333333"
+"tokens:last_update"
 ```
 
 ### Lua Script Execution Flow
 
-1.  **Receive Parameters**: key, window\_size, limit, current\_time, requested\_count
-    
-2.  **Calculate Window Key**: key .. ":" .. floor(now / window\_size)
-    
-3.  **Get Current Count**: GET window\_key
-    
-4.  **Check Limit**: If current\_count + requested <= limit
-    
-5.  **Allow**: INCRBY window\_key requested, EXPIRE window\_key window\_size + 1, return 1
-    
-6.  **Deny**: Ensure key exists with expiry, return 0
+1. **Receive Parameters**: key, capacity, refill_rate, current_time, requested_tokens
+
+2. **Get Current State**: GET key (returns "tokens:last_update")
+
+3. **Calculate Refill**: elapsed * refill_rate, then min(capacity, tokens + refilled)
+
+4. **Check Availability**: If tokens >= requested
+
+5. **Allow**: tokens = tokens - requested, SET key "tokens:now" EX 3600, return 1
+
+6. **Deny**: SET key "tokens:now" EX 3600, return 0
     
 
 ### Atomicity Guarantee
@@ -310,30 +315,30 @@ Configuration
 ### Rate Limit Profiles
 
 ```
-# DEFAULT: 60 requests per 60-second window (1 request/second average)
-DEFAULT_IP_LIMITER = FixedWindowCounter(window_size=60.0, limit=60)
-DEFAULT_ACCOUNT_LIMITER = FixedWindowCounter(window_size=60.0, limit=60)
+# DEFAULT: 60 tokens, refill rate 1 token/second
+DEFAULT_IP_LIMITER = TokenBucket(capacity=60.0, refill_rate=1.0)
+DEFAULT_ACCOUNT_LIMITER = TokenBucket(capacity=60.0, refill_rate=1.0)
 
-# SIGNUP: 5 IP / 2 email per 60-second window
-SIGNUP_IP_LIMITER = FixedWindowCounter(window_size=60.0, limit=5)
-SIGNUP_EMAIL_LIMITER = FixedWindowCounter(window_size=60.0, limit=2)
+# SIGNUP: 5 IP / 2 email tokens with slower refill
+SIGNUP_IP_LIMITER = TokenBucket(capacity=5.0, refill_rate=0.2)
+SIGNUP_EMAIL_LIMITER = TokenBucket(capacity=2.0, refill_rate=0.1)
 
-# LOGIN: 3 requests per 60-second window
-LOGIN_IP_LIMITER = FixedWindowCounter(window_size=60.0, limit=3)
-LOGIN_EMAIL_LIMITER = FixedWindowCounter(window_size=60.0, limit=3)
+# LOGIN: 3 tokens with moderate refill
+LOGIN_IP_LIMITER = TokenBucket(capacity=3.0, refill_rate=0.5)
+LOGIN_EMAIL_LIMITER = TokenBucket(capacity=3.0, refill_rate=0.2)
 ```
 
 ### Custom Configuration Examples
 
 ```
-# 100 requests per minute
-api_limiter = FixedWindowCounter(window_size=60.0, limit=100)
+# 100 tokens, refill 2 per second (allows bursts)
+api_limiter = TokenBucket(capacity=100.0, refill_rate=2.0)
 
-# 1000 requests per hour
-rate_limiter = FixedWindowCounter(window_size=3600.0, limit=1000)
+# 10 tokens, refill 1 per minute (very restrictive)
+rate_limiter = TokenBucket(capacity=10.0, refill_rate=0.0167)
 
-# 10 requests per 5 seconds (short burst protection)
-burst_limiter = FixedWindowCounter(window_size=5.0, limit=10)
+# 50 tokens, refill 5 per second (high throughput)
+burst_limiter = TokenBucket(capacity=50.0, refill_rate=5.0)
 ```
 
 Installation & Setup
@@ -345,14 +350,14 @@ Installation & Setup
     
 *   Docker and Docker Compose
     
-*   uv package manager (recommended)
+*   uv package manager (recommended)
     
 
 ### Clone and Setup
 
 ```
 git clone git@github.com:samvelarakelyan00/RateLimiters.git
-cd RateLimiters/FixedWindowCounter
+cd RateLimiters/TokenBucket
 cp .env.example .env
 ```
 
@@ -428,15 +433,15 @@ Testing
 ┌─────────────────────┬──────────────────────────────────────┬─────────────────┐
 │ Category            │ Description                          │ Test Count      │
 ├─────────────────────┼──────────────────────────────────────┼─────────────────┤
-│ Unit                │ Granular function-level tests        │ 44              │
+│ Unit                │ Granular function-level tests        │ 29              │
 ├─────────────────────┼──────────────────────────────────────┼─────────────────┤
 │ Integration         │ Full stack with Redis and API        │ 34              │
 ├─────────────────────┼──────────────────────────────────────┼─────────────────┤
-│ Security            │ Abuse prevention and attack sim      │ 11              │
+│ Security            │ Abuse prevention and attack sim      │ 9               │
 ├─────────────────────┼──────────────────────────────────────┼─────────────────┤
-│ Concurrency         │ Race condition and stress tests      │ 14              │
+│ Concurrency         │ Race condition and stress tests      │ 13              │
 ├─────────────────────┼──────────────────────────────────────┼─────────────────┤
-│ TOTAL               │                                      │ 103             │
+│ TOTAL               │                                      │ 85              │
 └─────────────────────┴──────────────────────────────────────┴─────────────────┘
 ```
 
@@ -476,13 +481,13 @@ The test runner provides real-time output showing each test as it runs:
 ```
 === UNIT TESTS ===
 ============================= test session starts ==============================
-collected 44 items
+collected 29 items
 
-../tests/unit/test_rate_limit_service.py::test_normalize_email_lowercases PASSED [ 2%]
-../tests/unit/test_rate_limit_service.py::test_normalize_email_strips_whitespace PASSED [ 4%]
+../tests/unit/test_rate_limit_service.py::test_normalize_email_lowercases PASSED [ 3%]
+../tests/unit/test_rate_limit_service.py::test_normalize_email_strips_whitespace PASSED [ 6%]
 ...
 
-============================== 44 passed in 6.70s ==============================
+============================== 29 passed in 5.40s ==============================
 ```
 
 API Endpoints
@@ -497,7 +502,7 @@ API Endpoints
 ```
 {
   "status": "healthy",
-  "service": "FixedWindowCounter",
+  "service": "TokenBucket",
   "version": "0.1.0",
   "timestamp": 1700000000,
   "checks": {
@@ -514,7 +519,7 @@ API Endpoints
 
 ```
 {
-  "service": "Fixed Window Counter Rate Limiter",
+  "service": "Token Bucket Rate Limiter",
   "version": "0.1.0",
   "status": "operational",
   "uptime_seconds": 3600
@@ -529,13 +534,13 @@ API Endpoints
 
 ```
 {
-  "algorithm": "Fixed Window Counter",
-  "default_window_size": "60 seconds",
-  "default_limit": "60 requests per window",
+  "algorithm": "Token Bucket",
+  "default_capacity": "60 tokens",
+  "default_refill_rate": "1 token per second",
   "endpoints": {
-    "login": "3 attempts per 60 seconds (IP and Email)",
-    "signup": "5 attempts per 60 seconds (IP), 2 per 60 seconds (Email)",
-    "default": "60 requests per 60 seconds"
+    "login": "3 tokens, refill 0.5 per second (IP and Email)",
+    "signup": "5 IP / 2 Email tokens, refill 0.2/0.1 per second",
+    "default": "60 tokens, refill 1 per second"
   }
 }
 ```
@@ -577,7 +582,7 @@ When rate limit is exceeded:
 
 ```
 {
-  "detail": "Fixed Window Counter -> Your IP limit exceeded; please try again later!"
+  "detail": "Token Bucket -> Your IP limit exceeded; please try again later!"
 }
 ```
 
@@ -590,9 +595,9 @@ Redis Integration
 ┌──────────────────────────────────────────┬───────────────────────────────────────────────┬───────────┬──────────────────┐
 │ Key Pattern                              │ Example                                       │ Value     │ TTL              │
 ├──────────────────────────────────────────┼───────────────────────────────────────────────┼───────────┼──────────────────┤
-│ rate:{endpoint}:ip:{ip}:{window_id}      │ rate:login:ip:192.168.1.1:28333333            │ 3         │ window_size + 1  │
+│ rate:{endpoint}:ip:{ip}                  │ rate:login:ip:192.168.1.1                     │ 3:1700000 │ 3600 seconds     │
 ├──────────────────────────────────────────┼───────────────────────────────────────────────┼───────────┼──────────────────┤
-│ rate:{endpoint}:email:{email}:{window_id}│ rate:login:email:user@test.com:28333333       │ 2         │ window_size + 1  │
+│ rate:{endpoint}:email:{email}            │ rate:login:email:user@test.com                │ 2:1700000 │ 3600 seconds     │
 └──────────────────────────────────────────┴───────────────────────────────────────────────┴───────────┴──────────────────┘
 ```
 
@@ -649,14 +654,15 @@ Performance Considerations
 
 1.  ```REDIS_MAX_CONNECTIONS=200```
     
-2.  **Use Redis Cluster** for horizontal scaling
+2.  **Use Redis Cluster** for horizontal scaling
     
 3. 
-```# Short bursts (5 seconds)
-FixedWindowCounter(window_size=5.0, limit=10)
+```
+# High burst tolerance
+TokenBucket(capacity=100.0, refill_rate=10.0)
 
-# Long-term quotas (1 hour)
-FixedWindowCounter(window_size=3600.0, limit=1000)
+# Smooth, consistent rate
+TokenBucket(capacity=10.0, refill_rate=0.5)
 ```
 4. ```REDIS_DB=1```
     
@@ -666,7 +672,7 @@ Troubleshooting
 
 ### Common Issues
 
-**1\. Connection to Redis fails**
+**1. Connection to Redis fails**
 
 Check Redis is running:
 
@@ -675,14 +681,14 @@ make redis-cli
 redis-cli ping
 ```
 
-Verify Redis host/port in .env:
+Verify Redis host/port in .env:
 
 ```
 REDIS_HOST=redis
 REDIS_PORT=6379
 ```
 
-**2\. Rate limiting not working**
+**2. Rate limiting not working**
 
 Check Redis keys:
 
@@ -695,7 +701,7 @@ Server started...
 Redis connection verified...
 ```
 
-**3\. Tests failing**
+**3. Tests failing**
 
 Run tests in isolation:
 
@@ -708,9 +714,9 @@ Check Redis connection in tests:
 
 ```make test-with-docker-integration```
 
-**4\. Event loop issues with tests**
+**4. Event loop issues with tests**
 
-Known issue with pytest-asyncio and Redis connections. Tests are marked with @pytest.mark.xfail when event loop issues occur.
+Known issue with pytest-asyncio and Redis connections. Tests are marked with @pytest.mark.xfail when event loop issues occur.
 
 ### Logs
 
@@ -737,22 +743,22 @@ Extending the Service
 
 ### Adding New Rate Limit Profiles
 
-Create new profiles in rate\_limit\_profiles.py:
+Create new profiles in rate\_limit\_profiles.py:
 
 ```
-# 100 requests per minute for API endpoints
-API_IP_LIMITER = FixedWindowCounter(window_size=60.0, limit=100)
+# 100 tokens, refill 2 per second for API endpoints
+API_IP_LIMITER = TokenBucket(capacity=100.0, refill_rate=2.0)
 
-# 10 requests per 5 seconds for burst protection
-BURST_LIMITER = FixedWindowCounter(window_size=5.0, limit=10)
+# 10 tokens, refill 1 per minute for burst protection
+BURST_LIMITER = TokenBucket(capacity=10.0, refill_rate=0.0167)
 
-# 1000 requests per hour for premium users
-PREMIUM_LIMITER = FixedWindowCounter(window_size=3600.0, limit=1000)
+# 1000 tokens, refill 10 per second for premium users
+PREMIUM_LIMITER = TokenBucket(capacity=1000.0, refill_rate=10.0)
 ```
 
 ### Adding Custom Dependencies
 
-Create a new dependency in auth\_rate\_limiters\_dep.py:
+Create a new dependency in auth\_rate\_limiters\_dep.py:
 
 ```
 async def get_api_rate_limiter(request: Request) -> None:
@@ -776,17 +782,17 @@ async def protected_endpoint(
     return {"message": "Protected endpoint with rate limiting"}
 ```
 
-### Custom Window Sizes
+### Custom Token Configurations
 
 ```
-# 5-minute window
-limiter = FixedWindowCounter(window_size=300.0, limit=50)
+# 5 tokens, refill 1 per 5 seconds (rate limiting with small bursts)
+limiter = TokenBucket(capacity=5.0, refill_rate=0.2)
 
-# 15-minute window
-limiter = FixedWindowCounter(window_size=900.0, limit=100)
+# 20 tokens, refill 2 per second (moderate bursts)
+limiter = TokenBucket(capacity=20.0, refill_rate=2.0)
 
-# 24-hour window
-limiter = FixedWindowCounter(window_size=86400.0, limit=1000)
+# 100 tokens, refill 10 per second (high throughput)
+limiter = TokenBucket(capacity=100.0, refill_rate=10.0)
 ```
 
 Monitoring & Observability
@@ -794,24 +800,26 @@ Monitoring & Observability
 
 ### Metrics to Track
 
-*   **Request count**: Total requests per window
-    
+*   **Request count**: Total requests processed
+
 *   **Rate limit hits**: 429 responses
-    
+
+*   **Token consumption**: Tokens used per request
+
 *   **Redis latency**: Response time from Redis
-    
+
 *   **Concurrent connections**: Active Redis connections
-    
-*   **Window size**: Current window usage
-    
+
+*   **Token refill rate**: Actual vs configured refill rate
+
 *   **Error rate**: HTTP 500 responses
     
 
 ### Health Endpoints
 
-*   /health - Basic health check (Redis connectivity)
+*   /health - Basic health check (Redis connectivity)
     
-*   /rate-limit-info - Rate limit configuration info
+*   /rate-limit-info - Rate limit configuration info
     
 
 ### Health Check Integration
@@ -841,9 +849,8 @@ Support
 
 For issues, questions, or contributions:
 
-*   GitHub Issues: [https://github.com/samvelarakelyan00/RateLimiters/issues](https://github.com/your-username/RateLimiters/issues)
+*   GitHub Issues: [https://github.com/samvelarakelyan00/RateLimiters/issues](https://github.com/your-username/RateLimiters/issues)
     
-*   Documentation: [https://github.com/samvelarakelyan00/RateLimiters/tree/main/FixedWindowCounter](https://github.com/your-username/RateLimiters/tree/main/FixedWindowCounter)
-    
+*   Documentation: [https://github.com/samvelarakelyan00/RateLimiters/tree/main/TokenBucket](https://github.com/your-username/RateLimiters/tree/main/FixedWindowCounter)
 
-**Documentation Version:** 1.0.0 **Last Updated:** July 2026 **Maintained by:** Samvel Arakelyan
+**Documentation Version:** 1.0.0 **Last Updated:** July 2026 **Maintained by:** Samvel Arakelyan

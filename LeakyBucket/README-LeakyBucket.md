@@ -169,7 +169,8 @@ Manages the Redis connection pool:
 File Structure
 --------------
 
-```LeakyBucket/
+```
+LeakyBucket/
 ├── app/
 │   ├── api/
 │   │   ├── dependencies/

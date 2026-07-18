@@ -1,0 +1,10 @@
+import os
+
+print(os.getcwd())
+
+# Own Modules
+from services.auth import AuthService
+
+
+async def get_auth_service() -> AuthService:
+    return AuthService()

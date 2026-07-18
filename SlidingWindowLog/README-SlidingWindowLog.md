@@ -173,7 +173,8 @@ Manages the Redis connection pool:
 File Structure
 --------------
 
-```SlidingWindowLog/
+```
+SlidingWindowLog/
 ├── app/
 │   ├── api/
 │   │   ├── dependencies/
@@ -366,7 +367,7 @@ Installation & Setup
 
 ```
 git clone git@github.com:samvelarakelyan00/RateLimiters.git
-cd RateLimiters/FixedWindowCounter
+cd RateLimiters/SlidingWindowLog
 cp .env.example .env
 ```
 

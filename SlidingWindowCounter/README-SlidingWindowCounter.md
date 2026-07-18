@@ -1,4 +1,4 @@
-Token Bucket Rate Limiter
+Sliding Window Counter Rate Limiter
 =================================
 
 Documentation
@@ -38,11 +38,13 @@ Documentation
 Overview
 --------
 
-The Token Bucket is a production-grade, distributed rate-limiting implementation designed for high-concurrency environments. It is one of five rate-limiting algorithms in the RateLimiters project, offering predictable request throttling with minimal memory overhead.
+The Sliding Window Counter is a production-grade, distributed rate-limiting implementation designed for high-concurrency environments. It is one of five rate-limiting algorithms in the RateLimiters project, offering an optimal balance between accuracy and memory efficiency.
 
 ### Key Characteristics
 
-*   **Burst Capable**: Allows short bursts of traffic by accumulating tokens
+*   **Hybrid Approach**: Combines fixed window counters with weighted averages for accuracy
+
+*   **Memory Efficient**: O(1) storage per key (unlike Sliding Window Log)
 
 *   **Distributed by Design**: Works across multiple service instances sharing a Redis backend
 
@@ -52,46 +54,46 @@ The Token Bucket is a production-grade, distributed rate-limiting implementation
 
 *   **FastAPI Integration**: Clean dependency injection via Depends() system
 
-*   **Memory Efficient**: O(1) storage per key using Redis Strings
-    
+*   **No Boundary Bursts**: Smooth rate limiting across window boundaries
+
 
 ### Use Cases
 
-*   API rate limiting with burst support
+*   Production API rate limiting requiring accuracy without high memory cost
 
-*   Mobile application rate limiting
+*   Systems balancing precision and performance
 
-*   Service-to-service communication throttling
+*   High-traffic endpoints where memory efficiency is critical
 
-*   Event processing rate control
+*   Financial and compliance applications
 
-*   Cost control for paid APIs
+*   Distributed systems requiring consistent rate limiting
 
-*   Compliance with usage SLAs
-    
+*   Enterprise-grade rate limiting requirements
+
 
 Architecture
 ------------
 
 ### High-Level Design
 
-The Token Bucket follows a clean, layered architecture that separates concerns and promotes maintainability:
+The Sliding Window Counter follows a clean, layered architecture that separates concerns and promotes maintainability:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        FastAPI Application                         │
 ├─────────────────────────────────────────────────────────────────────┤
-│                        API Layer (v1 Router)                       │
+│                        API Layer (v1 Router)                        │
 ├─────────────────────────────────────────────────────────────────────┤
-│                     Rate Limit Guard (Middleware)                  │
+│                     Rate Limit Guard (Middleware)                   │
 │                                                                     │
-│  ┌─────────────────────┐  ┌─────────────────────┐                  │
-│  │   IP-based Limiter  │  │  Email-based Limiter│                  │
-│  └─────────────────────┘  └─────────────────────┘                  │
+│  ┌─────────────────────┐  ┌─────────────────────┐                   │
+│  │   IP-based Limiter  │  │  Email-based Limiter│                   │
+│  └─────────────────────┘  └─────────────────────┘                   │
 ├─────────────────────────────────────────────────────────────────────┤
-│                    Rate Limit Service (Core Logic)                 │
+│                    Rate Limit Service (Core Logic)                  │
 ├─────────────────────────────────────────────────────────────────────┤
-│                Token Bucket Engine (Redis + Lua)           │
+│                Sliding Window Counter Engine (Redis + Lua)          │
 ├─────────────────────────────────────────────────────────────────────┤
 │                    Redis Connection Manager                         │
 ├─────────────────────────────────────────────────────────────────────┤
@@ -101,7 +103,7 @@ The Token Bucket follows a clean, layered architecture that separates concerns a
 
 ### Component Breakdown
 
-#### 1. TokenBucket (Core Engine)
+#### 1. SlidingWindowCounter (Core Engine)
 
 The heart of the rate limiter, implementing the algorithm with:
 
@@ -170,7 +172,7 @@ File Structure
 --------------
 
 ```
-TokenBucket/
+SlidingWindowCounter/
 ├── app/
 │   ├── api/
 │   │   ├── dependencies/
@@ -187,7 +189,7 @@ TokenBucket/
 │   │   │       ├── rate_limit_guard.py   # FastAPI dependency guard
 │   │   │       ├── rate_limit_profiles.py # Pre-configured limiters
 │   │   │       ├── rate_limit_service.py # IP extraction, key building, exceptions
-│   │   │       ├── rate_limiter.py       # Core TokenBucket implementation
+│   │   │       ├── rate_limiter.py       # Core SlidingWindowCounter implementation
 │   │   │       └── redis_manager.py      # Redis connection management
 │   │   └── settings/                     # Application configuration
 │   │       ├── __init__.py
@@ -229,57 +231,72 @@ TokenBucket/
 Algorithm Explanation
 ---------------------
 
-### How Token Bucket Works
+### How Sliding Window Counter Works
 
-The Token Bucket algorithm maintains a bucket with a fixed capacity of tokens. Tokens are added to the bucket at a fixed rate (refill_rate). Each request consumes one token (or more). If the bucket has enough tokens, the request is allowed; otherwise, it is denied.
+The Sliding Window Counter algorithm combines the memory efficiency of fixed windows with the accuracy of sliding windows by using a weighted average. Instead of storing individual timestamps (like Sliding Window Log), it maintains counters for the current and previous fixed windows and calculates an estimated count using a weighted average based on the position within the current window.
 
 ```
-Time: 0s                5s                10s               15s
+Time: 0s                60s               120s              180s
       |                  |                 |                 |
-      |---- Token ----   |---- Token ----  |---- Token ---- |
-      |   Bucket: 3/5    |   Bucket: 2/5   |   Bucket: 1/5   |
+      |---- Window 1 ----|---- Window 2 ---|---- Window 3 ---|
+      |   key:123:0      |   key:123:1     |   key:123:2     |
+      |   count: 5/10    |   count: 5/10   |   count: 0/10   |
       |                  |                 |                 |
       v                  v                 v                 v
-    Request 1         Refill +1        Refill +1        Refill +1
-    Consume 1         Request 4        Request 5        Request 6
-    (4 remaining)     Consume 1        Consume 1        Consume 1
-                      (3 remaining)    (2 remaining)    (1 remaining)
+    Request at 30s    Weighted: 0.5      Weighted: 0.25     Weighted: 0.75
+    (elapsed/time)    Estimated: 5       Estimated: 3.75    Estimated: 6.25
 ```
 
-### Token Calculation
+### Weighted Average Calculation
+
+The estimated count is calculated as:
 
 ```
-window_key = search_key + ":" + floor(current_timestamp / window_size)
+elapsed = now - (current_window * window_size)
+weight = elapsed / window_size
+estimated_count = (previous_count * (1 - weight)) + (current_count * weight)
 ```
 
-```
-elapsed = now - last_update
-refilled = elapsed * refill_rate
-tokens = min(capacity, tokens + refilled)
-```
-
-### Token Key Storage
-
-The bucket state is stored as a Redis String in the format:
+### Window Key Generation
 
 ```
-"tokens:last_update"
+current_window = floor(now / window_size)
+previous_window = current_window - 1
+current_window_key = search_key + ":" + current_window
+previous_window_key = search_key + ":" + previous_window
 ```
+
+### Example Calculation
+
+For a 60-second window, at 30 seconds into the window:
+
+*   Current window count: 5
+    
+*   Previous window count: 10
+    
+*   Weight: 30/60 = 0.5
+
+*   Estimated count: (10 * (1 - 0.5)) + (5 * 0.5) = 5 + 2.5 = 7.5
+
 
 ### Lua Script Execution Flow
 
-1. **Receive Parameters**: key, capacity, refill_rate, current_time, requested_tokens
+1. **Receive Parameters**: key, window_size, limit, current_time, requested
 
-2. **Get Current State**: GET key (returns "tokens:last_update")
+2. **Calculate Windows**: current_window, previous_window
 
-3. **Calculate Refill**: elapsed * refill_rate, then min(capacity, tokens + refilled)
+3. **Get Counts**: GET current_window_key, GET previous_window_key
 
-4. **Check Availability**: If tokens >= requested
+4. **Calculate Weight**: elapsed_in_window / window_size
 
-5. **Allow**: tokens = tokens - requested, SET key "tokens:now" EX 3600, return 1
+5. **Estimate Count**: (previous_count * (1 - weight)) + (current_count * weight)
 
-6. **Deny**: SET key "tokens:now" EX 3600, return 0
-    
+6. **Check Limit**: If estimated_count + requested <= limit
+
+7. **Allow**: INCRBY current_window_key, EXPIRE, return 1
+
+8. **Deny**: EXPIRE current_window_key, return 0
+
 
 ### Atomicity Guarantee
 
@@ -316,30 +333,30 @@ Configuration
 ### Rate Limit Profiles
 
 ```
-# DEFAULT: 60 tokens, refill rate 1 token/second
-DEFAULT_IP_LIMITER = TokenBucket(capacity=60.0, refill_rate=1.0)
-DEFAULT_ACCOUNT_LIMITER = TokenBucket(capacity=60.0, refill_rate=1.0)
+# DEFAULT: 60 requests per 60-second sliding window
+DEFAULT_IP_LIMITER = SlidingWindowCounter(window_size=60.0, limit=60)
+DEFAULT_ACCOUNT_LIMITER = SlidingWindowCounter(window_size=60.0, limit=60)
 
-# SIGNUP: 5 IP / 2 email tokens with slower refill
-SIGNUP_IP_LIMITER = TokenBucket(capacity=5.0, refill_rate=0.2)
-SIGNUP_EMAIL_LIMITER = TokenBucket(capacity=2.0, refill_rate=0.1)
+# SIGNUP: 5 IP / 2 email per 60-second sliding window
+SIGNUP_IP_LIMITER = SlidingWindowCounter(window_size=60.0, limit=5)
+SIGNUP_EMAIL_LIMITER = SlidingWindowCounter(window_size=60.0, limit=2)
 
-# LOGIN: 3 tokens with moderate refill
-LOGIN_IP_LIMITER = TokenBucket(capacity=3.0, refill_rate=0.5)
-LOGIN_EMAIL_LIMITER = TokenBucket(capacity=3.0, refill_rate=0.2)
+# LOGIN: 3 requests per 60-second sliding window
+LOGIN_IP_LIMITER = SlidingWindowCounter(window_size=60.0, limit=3)
+LOGIN_EMAIL_LIMITER = SlidingWindowCounter(window_size=60.0, limit=3)
 ```
 
 ### Custom Configuration Examples
 
 ```
-# 100 tokens, refill 2 per second (allows bursts)
-api_limiter = TokenBucket(capacity=100.0, refill_rate=2.0)
+# 100 requests per minute
+api_limiter = SlidingWindowCounter(window_size=60.0, limit=100)
 
-# 10 tokens, refill 1 per minute (very restrictive)
-rate_limiter = TokenBucket(capacity=10.0, refill_rate=0.0167)
+# 1000 requests per hour
+rate_limiter = SlidingWindowCounter(window_size=3600.0, limit=1000)
 
-# 50 tokens, refill 5 per second (high throughput)
-burst_limiter = TokenBucket(capacity=50.0, refill_rate=5.0)
+# 10 requests per 5 seconds (short burst protection)
+burst_limiter = SlidingWindowCounter(window_size=5.0, limit=10)
 ```
 
 Installation & Setup
@@ -358,7 +375,7 @@ Installation & Setup
 
 ```
 git clone git@github.com:samvelarakelyan00/RateLimiters.git
-cd RateLimiters/TokenBucket
+cd RateLimiters/SlidingWindowCounter
 cp .env.example .env
 ```
 
@@ -412,17 +429,17 @@ make up-concurrency   # Concurrency tests only
 
 ### Access the Service
 
-*   API: http://localhost:8000/api/v1/auth
+*   API: http://localhost:8000/api/v1/auth
     
-*   Root: http://localhost:8000/
+*   Root: http://localhost:8000/
     
-*   Health Check: http://localhost:8000/health
+*   Health Check: http://localhost:8000/health
     
-*   Rate Limit Info: http://localhost:8000/rate-limit-info
+*   Rate Limit Info: http://localhost:8000/rate-limit-info
     
-*   API Documentation: http://localhost:8000/api/docs
+*   API Documentation: http://localhost:8000/api/docs
     
-*   Redoc: http://localhost:8000/api/redoc
+*   Redoc: http://localhost:8000/api/redoc
     
 
 Testing
@@ -434,15 +451,15 @@ Testing
 ┌─────────────────────┬──────────────────────────────────────┬─────────────────┐
 │ Category            │ Description                          │ Test Count      │
 ├─────────────────────┼──────────────────────────────────────┼─────────────────┤
-│ Unit                │ Granular function-level tests        │ 29              │
+│ Unit                │ Granular function-level tests        │ 43              │
 ├─────────────────────┼──────────────────────────────────────┼─────────────────┤
-│ Integration         │ Full stack with Redis and API        │ 34              │
+│ Integration         │ Full stack with Redis and API        │ 36              │
 ├─────────────────────┼──────────────────────────────────────┼─────────────────┤
-│ Security            │ Abuse prevention and attack sim      │ 9               │
+│ Security            │ Abuse prevention and attack sim      │ 13              │
 ├─────────────────────┼──────────────────────────────────────┼─────────────────┤
-│ Concurrency         │ Race condition and stress tests      │ 13              │
+│ Concurrency         │ Race condition and stress tests      │ 16              │
 ├─────────────────────┼──────────────────────────────────────┼─────────────────┤
-│ TOTAL               │                                      │ 85              │
+│ TOTAL               │                                      │ 108             │
 └─────────────────────┴──────────────────────────────────────┴─────────────────┘
 ```
 
@@ -481,14 +498,29 @@ The test runner provides real-time output showing each test as it runs:
 
 ```
 === UNIT TESTS ===
-============================= test session starts ==============================
-collected 29 items
-
-../tests/unit/test_rate_limit_service.py::test_normalize_email_lowercases PASSED [ 3%]
-../tests/unit/test_rate_limit_service.py::test_normalize_email_strips_whitespace PASSED [ 6%]
 ...
-
-============================== 29 passed in 5.40s ==============================
+sliding_window_log_bucket_container  | collecting ... collected 43 items
+sliding_window_log_bucket_container  | 
+sliding_window_log_bucket_container  | ../tests/unit/test_rate_limit_service.py::test_normalize_email_lowercases PASSED [  2%]
+sliding_window_log_bucket_container  | ../tests/unit/test_rate_limit_service.py::test_normalize_email_strips_whitespace PASSED [  4%]
+sliding_window_log_bucket_container  | ../tests/unit/test_rate_limit_service.py::test_normalize_email_strips_and_lowercases PASSED [  6%]
+...
+sliding_window_log_bucket_container  | ../tests/unit/test_rate_limiter.py::test_get_newest_timestamp_returns_zero_for_empty PASSED [ 97%]
+sliding_window_log_bucket_container  | ../tests/unit/test_rate_limiter.py::test_get_newest_timestamp_returns_correct_value PASSED [100%]
+sliding_window_log_bucket_container  | 
+sliding_window_log_bucket_container  | ============================== 43 passed in 6.33s ==============================
+sliding_window_log_bucket_container  | 
+sliding_window_log_bucket_container  | ========================================
+sliding_window_log_bucket_container  |           TEST SUMMARY
+sliding_window_log_bucket_container  | ========================================
+sliding_window_log_bucket_container  | Total Tests:  43
+sliding_window_log_bucket_container  | Passed:       43
+sliding_window_log_bucket_container  | Failed:       0
+sliding_window_log_bucket_container  | XFailed:      0
+sliding_window_log_bucket_container  | Errors:       0
+sliding_window_log_bucket_container  | ----------------------------------------
+sliding_window_log_bucket_container  | ✅ ALL TESTS PASSED!
+sliding_window_log_bucket_container  | ========================================
 ```
 
 API Endpoints
@@ -503,7 +535,7 @@ API Endpoints
 ```
 {
   "status": "healthy",
-  "service": "TokenBucket",
+  "service": "SlidingWindowCounter",
   "version": "0.1.0",
   "timestamp": 1700000000,
   "checks": {
@@ -520,7 +552,7 @@ API Endpoints
 
 ```
 {
-  "service": "Token Bucket Rate Limiter",
+  "service": "Sliding Window Counter Rate Limiter",
   "version": "0.1.0",
   "status": "operational",
   "uptime_seconds": 3600
@@ -535,13 +567,13 @@ API Endpoints
 
 ```
 {
-  "algorithm": "Token Bucket",
-  "default_capacity": "60 tokens",
-  "default_refill_rate": "1 token per second",
+  "algorithm": "Sliding Window Counter",
+  "default_window_size": "60 seconds",
+  "default_limit": "60 requests per window",
   "endpoints": {
-    "login": "3 tokens, refill 0.5 per second (IP and Email)",
-    "signup": "5 IP / 2 Email tokens, refill 0.2/0.1 per second",
-    "default": "60 tokens, refill 1 per second"
+    "login": "3 attempts per 60 seconds (IP and Email)",
+    "signup": "5 attempts per 60 seconds (IP), 2 per 60 seconds (Email)",
+    "default": "60 requests per 60 seconds"
   }
 }
 ```
@@ -583,7 +615,7 @@ When rate limit is exceeded:
 
 ```
 {
-  "detail": "Token Bucket -> Your IP limit exceeded; please try again later!"
+  "detail": "Sliding Window Counter -> Your IP limit exceeded; please try again later!"
 }
 ```
 
@@ -593,13 +625,29 @@ Redis Integration
 ### Redis Key Structure
 
 ```
-┌──────────────────────────────────────────┬───────────────────────────────────────────────┬───────────┬──────────────────┐
-│ Key Pattern                              │ Example                                       │ Value     │ TTL              │
-├──────────────────────────────────────────┼───────────────────────────────────────────────┼───────────┼──────────────────┤
-│ rate:{endpoint}:ip:{ip}                  │ rate:login:ip:192.168.1.1                     │ 3:1700000 │ 3600 seconds     │
-├──────────────────────────────────────────┼───────────────────────────────────────────────┼───────────┼──────────────────┤
-│ rate:{endpoint}:email:{email}            │ rate:login:email:user@test.com                │ 2:1700000 │ 3600 seconds     │
-└──────────────────────────────────────────┴───────────────────────────────────────────────┴───────────┴──────────────────┘
+┌──────────────────────────────────────────┬───────────────────────────────────────────────┬─────────────────┬──────────────────┐
+│ Key Pattern                              │ Example                                       │ Data Structure  │ TTL              │
+├──────────────────────────────────────────┼───────────────────────────────────────────────┼─────────────────┼──────────────────┤
+│ rate:{endpoint}:ip:{ip}:{window_id}      │ rate:login:ip:192.168.1.1:28333333            │ String          │ window_size * 2  │
+├──────────────────────────────────────────┼───────────────────────────────────────────────┼─────────────────┼──────────────────┤
+│ rate:{endpoint}:email:{email}:{window_id}│ rate:login:email:user@test.com:28333333       │ String          │ window_size * 2  │
+└──────────────────────────────────────────┴───────────────────────────────────────────────┴─────────────────┴──────────────────┘
+```
+
+### Sorted Set Storage
+
+Each request timestamp is stored as a member in the sorted set:
+
+```
+ZADD key timestamp member
+```
+
+Example:
+
+```
+ZADD rate:login:ip:192.168.1.1 1700000000 1700000000
+ZADD rate:login:ip:192.168.1.1 1700000001 1700000001
+ZADD rate:login:ip:192.168.1.1 1700000002 1700000002
 ```
 
 ### Connection Pool Configuration
@@ -630,14 +678,14 @@ Performance Considerations
     
 *   **Concurrent Requests**: 50,000+
     
-*   **Redis Operations**: Single Lua script per request
+*   **Redis Operations**: Multiple GET + INCRBY per request
     
 
 ### Memory Usage
 
 *   **Per Key**: ~50 bytes (counter + key)
     
-*   **TTL Strategy**: 1-hour auto-expiry
+*   **TTL Strategy**: window_size * 2 auto-expiry
     
 *   **Memory Optimization**: Redis Strings instead of Hashes
     
@@ -649,23 +697,39 @@ Performance Considerations
 *   **Connection Pooling**: Efficient Redis connection reuse
     
 *   **Retry Logic**: Automatic retry on timeout
-    
 
+Trade-offs
+
+```
+┌─────────────────────┬───────────────────────────────────────────────┬────────────────────────────────────────────────────┐
+│ Aspect              │ Advantage                                     │ Disadvantage                                       │
+├─────────────────────┼───────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+│ Precision           │ Good approximation of sliding window          │ Not exact like Sliding Window Log                  │
+├─────────────────────┼───────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+│ Memory              │ O(1) per key                                  │ Less accurate at window boundaries                 │
+├─────────────────────┼───────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+│ Complexity          │ Simple counter management                     │ Weighted average calculation                       │
+├─────────────────────┼───────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+│ Burst               │ No window boundary bursts                     │ Small approximation error                          │
+└─────────────────────┴───────────────────────────────────────────────┴────────────────────────────────────────────────────┘
+```
 ### Optimization Tips
 
-1.  ```REDIS_MAX_CONNECTIONS=200```
+1. Increase connection pool size for higher concurrency:
+```REDIS_MAX_CONNECTIONS=200```
     
-2.  **Use Redis Cluster** for horizontal scaling
+2. **Use Redis Cluster** for horizontal scaling
     
-3. 
+3. Adjust window size based on use case:
 ```
-# High burst tolerance
-TokenBucket(capacity=100.0, refill_rate=10.0)
+# Short bursts (5 seconds)
+SlidingWindowCounter(window_size=5.0, limit=10)
 
-# Smooth, consistent rate
-TokenBucket(capacity=10.0, refill_rate=0.5)
+# Long-term quotas (1 hour)
+SlidingWindowCounter(window_size=3600.0, limit=1000)
 ```
-4. ```REDIS_DB=1```
+4. Use dedicated Redis database for rate limiting:
+```REDIS_DB=1```
     
 
 Troubleshooting
@@ -747,14 +811,14 @@ Extending the Service
 Create new profiles in rate\_limit\_profiles.py:
 
 ```
-# 100 tokens, refill 2 per second for API endpoints
-API_IP_LIMITER = TokenBucket(capacity=100.0, refill_rate=2.0)
+# 100 requests per minute for API endpoints
+API_IP_LIMITER = SlidingWindowCounter(window_size=60.0, limit=100)
 
-# 10 tokens, refill 1 per minute for burst protection
-BURST_LIMITER = TokenBucket(capacity=10.0, refill_rate=0.0167)
+# 10 requests per 5 seconds for burst protection
+BURST_LIMITER = SlidingWindowCounter(window_size=5.0, limit=10)
 
-# 1000 tokens, refill 10 per second for premium users
-PREMIUM_LIMITER = TokenBucket(capacity=1000.0, refill_rate=10.0)
+# 1000 requests per hour for premium users
+PREMIUM_LIMITER = SlidingWindowCounter(window_size=3600.0, limit=1000)
 ```
 
 ### Adding Custom Dependencies
@@ -783,17 +847,17 @@ async def protected_endpoint(
     return {"message": "Protected endpoint with rate limiting"}
 ```
 
-### Custom Token Configurations
+### Custom Window Configurations
 
 ```
-# 5 tokens, refill 1 per 5 seconds (rate limiting with small bursts)
-limiter = TokenBucket(capacity=5.0, refill_rate=0.2)
+# 5-minute window
+limiter = SlidingWindowCounter(window_size=300.0, limit=50)
 
-# 20 tokens, refill 2 per second (moderate bursts)
-limiter = TokenBucket(capacity=20.0, refill_rate=2.0)
+# 15-minute window
+limiter = SlidingWindowCounter(window_size=900.0, limit=100)
 
-# 100 tokens, refill 10 per second (high throughput)
-limiter = TokenBucket(capacity=100.0, refill_rate=10.0)
+# 24-hour window
+limiter = SlidingWindowCounter(window_size=86400.0, limit=1000)
 ```
 
 Monitoring & Observability
@@ -801,18 +865,16 @@ Monitoring & Observability
 
 ### Metrics to Track
 
-*   **Request count**: Total requests processed
-
+*   **Request count**: Total requests per window
+    
 *   **Rate limit hits**: 429 responses
-
-*   **Token consumption**: Tokens used per request
-
+    
 *   **Redis latency**: Response time from Redis
-
+    
 *   **Concurrent connections**: Active Redis connections
-
-*   **Token refill rate**: Actual vs configured refill rate
-
+    
+*   **Window size**: Current window usage
+    
 *   **Error rate**: HTTP 500 responses
     
 
@@ -852,6 +914,7 @@ For issues, questions, or contributions:
 
 *   GitHub Issues: [https://github.com/samvelarakelyan00/RateLimiters/issues](https://github.com/your-username/RateLimiters/issues)
     
-*   Documentation: [https://github.com/samvelarakelyan00/RateLimiters/tree/main/TokenBucket](https://github.com/your-username/RateLimiters/tree/main/FixedWindowCounter)
+*   Documentation: [https://github.com/samvelarakelyan00/RateLimiters/tree/main/SlidingWindowCounter](https://github.com/your-username/RateLimiters/tree/main/FixedWindowCounter)
+    
 
-**Documentation Version:** 1.0.0 **Last Updated:** July 2026 **Maintained by:** Samvel Arakelyan
+**Documentation Version:** 1.0.0 **Last Updated:** July 2026 **Maintained by:** Samvel Arakelyan

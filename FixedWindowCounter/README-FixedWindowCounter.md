@@ -169,7 +169,8 @@ Manages the Redis connection pool:
 File Structure
 --------------
 
-```FixedWindowCounter/
+```
+FixedWindowCounter/
 ├── app/
 │   ├── api/
 │   │   ├── dependencies/
